@@ -1,0 +1,62 @@
+---
+title: "Pentathlon III: Next Product to Buy Modeling"
+output: html_document
+---
+
+* Team-lead gitlab id:
+* Team-lead gitlab username:
+* Group number:
+* Group name:
+* Team member names:
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+  dpi = 96,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE
+)
+
+## load radiant packages if neededi
+if (!exists("r_environment")) library(radiant)
+```
+
+<style>
+.table {
+  width: auto;
+}
+ul, ol {
+  padding-left: 18px;
+}
+pre, code, pre code {
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+  background-color: #ffffff;
+}
+</style>
+
+## Setup
+
+Please complete this Rmarkdown document by answering the questions in `pentathlon-nptb.pdf` on Dropbox (week8/readings/). The code block below will load the data you need. Please DO NOT change the code used to load the data. Create an HTML file with all your results and comments and push both the Rmarkdown and HTML file to GitLab when you are done. As always, all results MUST be reproducible (i.e., the TA and I must be able to recreate the HTML from the R-markdown file without changes or errors).
+
+Good luck!
+
+```{r}
+## Loading the data from Dropbox/MGTA455-2018/data/
+pentathlon_nptb_wrk <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2018/data/pentathlon_nptb.rds"))
+```
+
+## Question answers
