@@ -8,9 +8,32 @@ output: html_notebook
 pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/pentathlon_nptb.rds"))
 ```
 
-```{r}
-A <- pentathlon_nptb %>%
-  filter(is.na(training))
 
-sum(A$buyer == 'yes') / nrow(A)
+```{r}
+## filter and sort the dataset
+pentathlon_nptb_train <- pentathlon_nptb %>%
+  filter(training == 1) %>%
+  select(custid:representative)
+register("pentathlon_nptb_train", "pentathlon_nptb")
+# dtab(pentathlon_nptb_train, dec = 2, nr = 100) %>% render()
+pentathlon_nptb_test <- pentathlon_nptb %>%
+  filter(training == 0) %>%
+  select(custid:representative)
+register("pentathlon_nptb_test", "pentathlon_nptb")
+```
+
+Logistic Regression
+
+```{r}
+result <- logistic(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes"
+)
+summary(result)
 ```
