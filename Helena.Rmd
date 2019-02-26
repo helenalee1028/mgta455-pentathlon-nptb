@@ -83,5 +83,6 @@ train <- mutate(train,to_offer = c("endurance", "strength", "water", "team",
     "backcountry", "winter", "racquet")[which.pmax(p_endurance, p_strength, p_water, p_team, p_backcountry, p_winter, p_racquet)],  
     p_target = pmax(p_endurance, p_strength, p_water, p_team, p_backcountry, p_winter, p_racquet)
     )
+
 ```
 
