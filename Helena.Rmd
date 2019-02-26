@@ -90,7 +90,7 @@ table(train$to_offer)/nrow(train)
 ```
 
 ```{r}
-result <- regress(
+regression <- regress(
   pentathlon_nptb, 
   rvar = "total_os", 
   evar = c(
@@ -110,6 +110,12 @@ result <- regress(
     "message:freq_racquet"
   )
 )
-summary(result)
+summary(regression)
+```
+
+```{r}
+
+
+predict(result, pred_data = bbb)$Prediction
 ```
 
