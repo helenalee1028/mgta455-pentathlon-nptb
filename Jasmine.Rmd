@@ -105,7 +105,7 @@ colnames(params) <- c("size",'decay')
 
 auc <- c()
 accuracy <- c()
-for (i in nrow(params)){
+for (i in 1:nrow(params)){
  
   result <- nn(
   pentathlon_nptb_train, 
@@ -133,12 +133,13 @@ for (i in nrow(params)){
 }
 params$auc <- auc
 params$accuracy <- accuracy
+params <- arrange(params, desc(params$accuracy))
 saveRDS(params, "nn_tune.rds")
 ```
 
 
 
 ```{r}
-
-params
+nn_tune <-readRDS("nn_tune.rds")
+nn_tune
 ```
