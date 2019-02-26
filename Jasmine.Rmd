@@ -22,7 +22,8 @@ pentathlon_nptb_test <- pentathlon_nptb %>%
 register("pentathlon_nptb_test", "pentathlon_nptb")
 ```
 
-Logistic Regression
+Logistic regression with interaction：
+with all best 19 interactions
 
 ```{r}
 result <- logistic(
@@ -33,7 +34,50 @@ result <- logistic(
     "freq_endurance", "freq_strength", "freq_water", "freq_team", 
     "freq_backcountry", "freq_winter", "freq_racquet"
   ), 
-  lev = "yes"
+  lev = "yes", 
+  int = c(
+    "message:age", "message:gender", 
+    "age:gender", "age:income", 
+    "age:education", "age:children", 
+    "age:freq_endurance", 
+    "age:freq_strength", 
+    "age:freq_water", "age:freq_team", 
+    "gender:income", "income:education", 
+    "income:children", "income:freq_endurance", 
+    "income:freq_strength", 
+    "income:freq_water", 
+    "income:freq_backcountry", 
+    "education:freq_winter", 
+    "education:freq_racquet"
+  )
 )
 summary(result)
+
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_logit")
 ```
+
+Calculate accuracy.
+```{r}
+
+cm <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "auc", "accuracy")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    resp <- pull(dat, "buyer")
+    
+    predict <- ifelse(pull(dat, !!var) > 0.5, "TRUE", "FALSE") # predict whether a customer will buy 
+    
+    tpr <- sum(resp == "yes" & predict == "TRUE") + sum(resp == "no" & predict == "FALSE")  /nrow(resp)
+    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
+    
+    cm_vec <- c(var, auc, tpr)
+    cm_df[i,] <- cm_vec
+  }
+  return(cm_df)
+}
