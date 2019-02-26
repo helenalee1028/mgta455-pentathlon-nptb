@@ -1,0 +1,86 @@
+---
+title: "Helena"
+author: "Wenrui_Li"
+date: "2/25/2019"
+output: html_document
+---
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+  dpi = 96,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE
+)
+
+## load radiant packages if neededi
+if (!exists("r_environment")) library(radiant)
+```
+
+```{r}
+## Loading the data from Dropbox/MGTA455-2019/data/
+pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/pentathlon_nptb.rds"))
+```
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+train = pentathlon_nptb %>%
+  filter(training == 1)
+test = pentathlon_nptb %>%
+  filter(training == 0)
+```
+
+```{r}
+result <- logistic(
+  train, 
+  rvar = "buyer", 
+  evar = c(
+    "message","age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes"
+)
+summary(result)
+```
+
+```{r}
+pred <- predict(result, pred_data = train, pred_cmd = "message = 'endurance'")
+train <- store(train, pred, name = "p_endurance")
+pred <- predict(result, pred_data = train, pred_cmd = "message = 'strength'")
+train <- store(train, pred, name = "p_strength")
+pred <- predict(result, pred_data = train, pred_cmd = "message ='water'")
+train <- store(train, pred, name = "p_water")
+pred <- predict(result, pred_data = train, pred_cmd = "message ='team'")
+train <- store(train, pred, name = "p_team")
+pred <- predict(result, pred_data = train, pred_cmd = "message ='backcountry'")
+train <- store(train, pred, name = "p_backcountry")
+pred <- predict(result, pred_data = train, pred_cmd = "message ='winter'")
+train <- store(train, pred, name = "p_winter")
+pred <- predict(result, pred_data = train, pred_cmd = "message ='racquet'")
+train <- store(train, pred, name = "p_racquet")
+```
+
+```{r}
+train <- mutate(train,to_offer = c("endurance", "strength", "water", "team", 
+    "backcountry", "winter", "racquet")[which.pmax(p_endurance, p_strength, p_water, p_team, p_backcountry, p_winter, p_racquet)],  
+    p_target = pmax(p_endurance, p_strength, p_water, p_team, p_backcountry, p_winter, p_racquet)
+    )
+```
+
