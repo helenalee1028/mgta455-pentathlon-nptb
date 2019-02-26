@@ -83,6 +83,33 @@ train <- mutate(train,to_offer = c("endurance", "strength", "water", "team",
     "backcountry", "winter", "racquet")[which.pmax(p_endurance, p_strength, p_water, p_team, p_backcountry, p_winter, p_racquet)],  
     p_target = pmax(p_endurance, p_strength, p_water, p_team, p_backcountry, p_winter, p_racquet)
     )
+```
 
+```{r}
+table(train$to_offer)/nrow(train)
+```
+
+```{r}
+result <- regress(
+  pentathlon_nptb, 
+  rvar = "total_os", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  int = c(
+    "message:age", "message:gender", 
+    "message:income", "message:education", 
+    "message:children", "message:freq_endurance", 
+    "message:freq_strength", 
+    "message:freq_water", 
+    "message:freq_team", 
+    "message:freq_backcountry", 
+    "message:freq_winter", 
+    "message:freq_racquet"
+  )
+)
+summary(result)
 ```
 
