@@ -55,7 +55,8 @@ result <- logistic(
     "freq_endurance", "freq_strength", "freq_water", "freq_team", 
     "freq_backcountry", "freq_winter", "freq_racquet"
   ), 
-  lev = "yes"
+  lev = "yes",
+  int = c("message:age", "message:gender", "message:income", "message:education", "message:children","message:freq_endurance", "message:freq_strength", "message:freq_water", "message:freq_team", "message:freq_backcountry","message:freq_winter","message:freq_racquet"  )
 )
 summary(result)
 ```
