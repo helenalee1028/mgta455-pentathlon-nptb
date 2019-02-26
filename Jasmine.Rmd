@@ -59,7 +59,6 @@ pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_logit")
 
 Calculate accuracy.
 ```{r}
-
 cm <- function(dat, vars){
   
   cm_df <- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
@@ -73,11 +72,18 @@ cm <- function(dat, vars){
     
     predict <- ifelse(pull(dat, !!var) > 0.5, "TRUE", "FALSE") # predict whether a customer will buy 
     
-    tpr <- sum(resp == "yes" & predict == "TRUE") + sum(resp == "no" & predict == "FALSE")  /nrow(resp)
+    accuracy <- (sum(resp == "yes" & predict == "TRUE") + sum(resp == "no" & predict == "FALSE"))/nrow(dat)
+    
     auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
     
-    cm_vec <- c(var, auc, tpr)
+    cm_vec <- c(var, auc, accuracy)
     cm_df[i,] <- cm_vec
   }
   return(cm_df)
 }
+```
+
+
+```{r}
+cm(pentathlon_nptb_test,'pred_logit')
+```
