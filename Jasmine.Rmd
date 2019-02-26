@@ -57,7 +57,7 @@ pred <- predict(result, pred_data = pentathlon_nptb_test)
 pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_logit")
 ```
 
-Calculate accuracy.
+create a function to alculate auc and accuracy.
 ```{r}
 cm <- function(dat, vars){
   
@@ -86,4 +86,138 @@ cm <- function(dat, vars){
 
 ```{r}
 cm(pentathlon_nptb_test,'pred_logit')
+```
+Grid search for neural network.
+
+Neural network nn=2,3,4,5,6,7,8,9,10
+decay = 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9
+
+
+```{r}
+## nn = 2
+result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  size = 2, 
+  seed = 1234
+)
+#summary(result, prn = TRUE)
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_nn2")
+
+
+## nn = 3
+result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  size = 3, 
+  seed = 1234
+)
+#summary(result, prn = TRUE)
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_nn3")
+
+
+## nn = 4
+result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  size = 4, 
+  seed = 1234
+)
+#summary(result, prn = TRUE)
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_nn4")
+
+
+## nn = 5
+result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  size = 5, 
+  seed = 1234
+)
+#summary(result, prn = TRUE)
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_nn5")
+
+```
+
+```{r}
+cm(pentathlon_nptb_test,c('pred_nn2','pred_nn3','pred_nn4','pred_nn5'))
+```
+Grid search
+```{r eval = FALSE}
+## create vector storing paremeters. 
+size = seq(1,10,1)
+decay = seq(0.1,1,0.1)
+
+## create grid search matrix
+params <- expand.grid(size,decay)
+#params$auc <- NA
+colnames(params) <- c("size",'decay')
+
+auc <- c()
+accuracy <- c()
+for (i in nrow(params)){
+ 
+  result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"), 
+  lev = "yes", 
+  size = params[i,1], 
+  decay = params[i,2], 
+  seed = 1234
+)
+  pred <- predict(result, pred_data = pentathlon_nptb_test)
+  name_ <- paste0('pred_nn',params[i,1],'_',params[i,2])
+  print(name_)
+  pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = name_)
+  
+  
+  
+  auc_ <- cm(pentathlon_nptb_test,name_)$auc
+  accuracy_ <- cm(pentathlon_nptb_test,name_)$accuracy
+  auc<- c(auc,auc_)
+  accuracy <-c(accuracy,accuracy_)
+}
+params$auc <- auc
+params$accuracy <- accuracy
+saveRDS(params, "data/nn_tune.rds")
+```
+
+
+
+```{r}
+
+
 ```
