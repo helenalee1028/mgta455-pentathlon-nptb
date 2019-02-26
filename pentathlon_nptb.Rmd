@@ -60,3 +60,28 @@ pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA
 ```
 
 ## Question answers
+
+Modify cm function to get auc and accuracy metric.
+```{r}
+cm <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "auc", "accuracy")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    resp <- pull(dat, "buyer")
+    
+    predict <- ifelse(pull(dat, !!var) > 0.5, "TRUE", "FALSE") # predict whether a customer will buy 
+    
+    accuracy <- (sum(resp == "yes" & predict == "TRUE") + sum(resp == "no" & predict == "FALSE"))/nrow(dat)
+    
+    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
+    
+    cm_vec <- c(var, auc, accuracy)
+    cm_df[i,] <- cm_vec
+  }
+  return(cm_df)
+}
