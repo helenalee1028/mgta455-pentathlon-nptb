@@ -143,3 +143,35 @@ saveRDS(params, "nn_tune.rds")
 nn_tune <-readRDS("nn_tune.rds")
 nn_tune
 ```
+
+
+xgboost model with caret
+
+Create dataframe needed.
+
+```{r}
+library(caret)
+pentathlon_nptb_xgb <- pentathlon_nptb
+
+temp <- dummyVars(~message +age ,data = pentathlon_nptb_xgb)
+pred <- predict(temp, newdata = pentathlon_nptb_xgb)
+pentathlon_nptb_xgb <- pentathlon_nptb_xgb %>%
+  cbind(pred) %>%
+  select(-c('custid','message','age','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.< 30')) %>%
+  mutate(buyer = ifelse(buyer == 'yes',1,0),
+         gender = ifelse(gender == 'M',1,0))
+
+pentathlon_nptb_xgb_train <- pentathlon_nptb_xgb %>%
+  filter(training == 1) %>%
+  select(-training)
+  
+pentathlon_nptb_xgb_test <- pentathlon_nptb_xgb %>%
+  filter(training == 0) %>%
+  select(-training)
+```
+
+
+```{r}
+
+
+```
