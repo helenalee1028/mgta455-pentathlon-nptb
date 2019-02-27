@@ -151,15 +151,18 @@ Create dataframe needed.
 
 ```{r}
 library(caret)
+library(xgboost)
+
 pentathlon_nptb_xgb <- pentathlon_nptb
 
 temp <- dummyVars(~message +age ,data = pentathlon_nptb_xgb)
 pred <- predict(temp, newdata = pentathlon_nptb_xgb)
+
 pentathlon_nptb_xgb <- pentathlon_nptb_xgb %>%
   cbind(pred) %>%
   select(-c('custid','message','age','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.< 30')) %>%
-  mutate(buyer = ifelse(buyer == 'yes',1,0),
-         gender = ifelse(gender == 'M',1,0))
+  mutate(#buyer = ifelse(buyer == 'yes',1,0),
+         gender =ifelse(gender == 'M',1,0))
 
 pentathlon_nptb_xgb_train <- pentathlon_nptb_xgb %>%
   filter(training == 1) %>%
@@ -168,10 +171,55 @@ pentathlon_nptb_xgb_train <- pentathlon_nptb_xgb %>%
 pentathlon_nptb_xgb_test <- pentathlon_nptb_xgb %>%
   filter(training == 0) %>%
   select(-training)
+
+#### Create xgboost-specific DMatrix
+
+X_train = as.matrix(pentathlon_nptb_xgb_train)
+y_train = as.matrix(pentathlon_nptb_xgb_train$buyer)
+
+X_test = as.matrix(pentathlon_nptb_xgb_test)
+y_test =as.matrix(pentathlon_nptb_xgb_test$buyer) 
+
+#dtest <- xgb.DMatrix(data = X_test, label = y_test)
+#dtrain <- xgb.DMatrix(data = X_train, label = y_train)
 ```
 
+A very general parameter search.
 
 ```{r}
+xgb_grid_1 = expand.grid(
+  nrounds = c(20,50,100),
+  eta = c(0.1, 0.2, 0.3),
+  max_depth = c(2, 4, 6, 8),
+  gamma = 1,
+  colsample_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  
+)
 
+xgb_trcontrol_1 = trainControl(
+  method = "repeatedcv",
+  number = 5,
+  verboseIter = TRUE,
+  returnData = TRUE,
+  returnResamp = "all",                                                        # save losses across all models
+  classProbs = TRUE,                                                           # set to TRUE for AUC to be computed
+  summaryFunction = twoClassSummary,
+  allowParallel = FALSE
+)
+
+xgb_train_1 = train(
+  formula = buyer ~ . ,
+  data=X_train,
+  trControl = xgb_trcontrol_1,
+  tuneGrid = xgb_grid_1,
+  method = "xgbTree"
+)
 
 ```
+
+
+
+
+
