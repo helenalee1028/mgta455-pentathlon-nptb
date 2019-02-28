@@ -845,6 +845,38 @@ nn_preds %>%
 #### Question 3
 
 ```{r}
+# regress order size
+pentathlon_nptb_os <- pentathlon_nptb_total %>% 
+  mutate(total_os_ln = log(total_os))
+
+
+lm_result <- regress(
+  pentathlon_nptb_os, 
+  rvar = "total_os_ln", 
+  evar = c(
+    "message", "age", "income", "education", "children", "freq_endurance", 
+    "freq_strength", "freq_water", "freq_team", "freq_backcountry", 
+    "freq_winter", "freq_racquet"
+  ), 
+  data_filter = "buyer == 'yes'"
+)
+summary(lm_result, sum_check = "rmse")
+
+# use model to predict order size for each customer if they purchase
+
+lm_os_random <- predict(lm_result, pred_data = pentathlon_nptb_rep)$Prediction
+lm_os_end <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'endurance'")$Prediction
+lm_os_rac <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'racquet'")$Prediction
+lm_os_water <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'water'")$Prediction
+lm_os_winter <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'winter'")$Prediction
+lm_os_bc <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'backcountry'")$Prediction
+lm_os_strg <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'strength'")$Prediction
+lm_os_team <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'team'")$Prediction
+
+```
+
+
+```{r}
 end_os <- pentathlon_nptb_total %>% 
   filter(message== "endurance" & total_os != 0) %>% 
   summarise(avg = mean(total_os)) %>% 
@@ -909,10 +941,11 @@ nn_preds %>%
 #### Question 4
 
 ```{r}
-nn_preds %>% 
+avg_perc <- nn_preds %>% 
   group_by(to_send_ep_msg) %>% 
   summarise(perc = n()/nrow(nn_preds)) %>% 
   arrange(desc(perc))
+avg_perc
 ```
 
 #### Question 5
@@ -931,11 +964,23 @@ colMeans(nn_preds[,c(11:17)])
 #### Question 7
 
 ```{r}
+# save average order size in a table
+os_tbl <- data.frame(bc_os, end_os, rac_os, strength_os, team_os, water_os, winter_os)
+os_tbl <- os_tbl %>% 
+  gather(key = "type", value = value)
+
+os_tbl$type <- c("backcountry", "endurance", "racquet", "strength","team","water", "winter")
+
+# multiply the corresponding order size to randomly assigned message type
 
 random_pred_adj <- adjust_prob(random_pred$Prediction)
+nn_preds$random_prob <- random_pred_adj
+nn_preds$random_message <- as.character(pentathlon_nptb_rep$message)
+nn_preds <- nn_preds %>% left_join(os_tbl, by = c("random_message" = "type"))
+nn_preds <- nn_preds %>% 
+  mutate(random_ep = value * random_prob * 0.4)
 
-exp_random <- random_pred_adj * random_os * 0.4
-random_ep <- mean(exp_random)
+random_ep <- mean(nn_preds$random_ep)
 random_ep
 
 ```
@@ -950,12 +995,17 @@ print(paste0("The improvement in euros is ", format_nr(diff_euro, dec = 2)))
 print(paste0("The improvement in percentage is ", format_nr(diff_perc, perc = T)))
 ```
 
-### Cross validation on full dataset
-
-```{r}
-
-```
-
 ### New Policy Proposal - Flaw and Improvement
 
-If promotional emails were assigned on a monthly basis as proposed, a customer would only get 2 types of messages each month. There are 2 potential problems. First and foremost, the analytics team wouldn't get information on the effect of other types of message and the customer would get stuck with the same 2 categories of emails. As a result, this proposal can't capture change in customers' preference. A customer may have purchased one category of products but wish to move on to other products.
+Weakness - If promotional emails were assigned on a monthly basis as proposed, a customer would only get 2 types of messages each month. There are 2 potential problems. First and foremost, our prediction is only based on customers' response to last one email, the result may occur by chance and may not be able to represent the real preference of that customer. If further analytics is only based on their response of top 2 message types, we may never get there responses to other messages. Our strategy towards them will be very biased and out of date.
+
+Improvement - In a monthly basis, randomly assign seven categories of messages to customers emails in the first 2 weeks. During second week, we analyze their responses from first week and determine two messages that would yield the highest expected profit. For the last 2 weeks in the month, those 2 departments each control 1/2 of messages. In this way, we can capture customers' real time preference for each month and send them targeted messages to generate more profit in the second half of that month.
+
+
+
+
+
+
+
+
+
