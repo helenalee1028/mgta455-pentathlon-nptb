@@ -3,6 +3,7 @@ title: "Pentathlon III: Next Product to Buy Modeling"
 output: 
   html_document:
     toc: true
+    toc_depth: 2
 
 ---
 
@@ -16,12 +17,13 @@ output:
 ## initial settings
 knitr::opts_chunk$set(
   comment = NA,
-  echo = TRUE,
+  echo = FALSE,
   error = TRUE,
   cache = FALSE,
   message = FALSE,
   dpi = 96,
-  warning = FALSE
+  warning = FALSE, 
+  digits = 4
 )
 
 ## width to use when printing tables etc.
@@ -64,7 +66,7 @@ pre, code, pre code {
 }
 </style>
 
-## Setup
+### Setup
 
 Please complete this Rmarkdown document by answering the questions in `pentathlon-nptb.pdf` on Dropbox (week8/readings/). The code block below will load the data you need. Please DO NOT change the code used to load the data. Create an HTML file with all your results and comments and push both the Rmarkdown and HTML file to GitLab when you are done. As always, all results MUST be reproducible (i.e., the TA and I must be able to recreate the HTML from the R-markdown file without changes or errors).
 
@@ -75,22 +77,27 @@ Good luck!
 pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/pentathlon_nptb.rds"))
 ```
 
-### Summary of Analysis Report
+### Summary 
+#### Analytics Process
 
-1. Model selection 
+*1. Model selection *
 * Used logistic regression, Keras Deep Learning, Neural Network, GBM and XGboost to fit training data (variable ‘training’ equals 1) and get the optimal model which yields the highest AUC score in test dataset (variable ‘training’ equals 0). 
 
-2. Probability prediction
+*2. Probability prediction*
 * After selecting the optimal model, we train the model again on the entire dataset where variable ‘representative’ equals 0. 
 * Then we use the real test dataset where variable ‘representative’ equals 1 for prediction. 8 series of predictions were generated to represent customers’ purchasing probability upon receiving endurance, strength, backcountry, racquet, winter, water, team or any of the 7 categories of messages, respectively. 
 * Predicted probabilities were adjusted to accommodate the actual purchasing proportion, which is around 1% on average.
 
-3. Message Type for Email Marketing Campaign
+*3. Message Type for Email Marketing Campaign*
 * message type based on the highest ranked probability - For example, if the likelihood of a customer purchasing is highest when we send him a message on endurance products, then endurance message is the target message type. 
 * message type based on the highest ranked expected profits - The average order size for each message type is the average total order size for customers who receive that particular message type and purchase. To get the expected profits, we multiply the predicted probability by the average order size and profit rate of 40%. The target message category is the one with the highest expected profit for each customer.
 
-4. Effectiveness Measurement of NPTB Strategy
+*4. Effectiveness Measurement of NPTB Strategy*
 * Given a typical promotional email blast to 5,000,000 customers, we calculated the improvement of expected profits with targeting procedure over with random assignment, both in terms of absolute euros and in percentage.
+
+#### Key Findings
+
+We find that endurance and strength are our most popular target message categories, either based probability or epected profit rankings. The expected profit per emailed customer is 0.274 euro with targeting technique while 0.235 euro with random assignment. Under a typical email blast to 5 million customers, the difference is translated into an improvement of 199,034 euros or 16.96%. 
 
 ### Model Selection
 
@@ -182,7 +189,7 @@ logit_pred <- predict(result, pred_data = nptb_test)
 
 #### Neural Network 
 
-Also, we used single layer neural network to capture the interaction effects. In this step, we looped over node size from 1 to 10 and decay range from 0.1 to 1. Then we used the optimal model to run predictions on test dataset. 
+Afterwards, we used single layer neural network to capture the interaction effects. In this step, we looped over node size from 1 to 10 and decay rates from 0.1 to 1. Then we used the optimal model to run predictions on test dataset. 
 
 ```{r}
 ## filter and sort the dataset
@@ -253,7 +260,7 @@ params <- arrange(params, desc(params$accuracy))
 saveRDS(params, "data/nn_tune.rds")
 ```
 
-The best size is 7 and best decay is 0.8. We then predict based on this model.
+The best size is 7 and best decay is 0.1. We then predict based on this model.
 
 ```{r} 
 nn_tune <-readRDS("data/nn_tune.rds")
@@ -281,7 +288,7 @@ nn_pred <- predict(nn_result, pred_data = nn_nptb_test)
 
 #### Keras MLP
 
-In keras deep learning models, we tried 2 and 3 hidden layers and compared the prediction performance on test dataset and below are our results. The accuracy scores are both around 0.810 and the AUC scores around 0.886. 
+In keras deep learning models, we tried 2 and 3 hidden layers and compared the prediction performance on test dataset. The accuracy scores are both around 0.810 and the AUC scores around 0.886. The models perform rather similarly and we'll go with 3-layer model for our predictions. 
 
 ```{r eval = FALSE}
 nptb_keras <- pentathlon_nptb %>% 
@@ -394,7 +401,7 @@ estimates_keras %>% roc_auc(truth, pred_probs2)
 
 #### Gradient Boosting Machine
 
-In this part, we tuned GBM models 3 times and saved the optimal model from each round of tuning. In the end we choose the one with highest ROC and predict on test dataset. 
+In this part, we tuned GBM models 3 times and saved the optimal model from each round of tuning. In the end we choose the one with highest ROC-AUC and predict on test dataset. 
 
 ```{r}
 train = pentathlon_nptb %>%
@@ -507,8 +514,6 @@ params3 %>%
   arrange(desc(ROC)) %>% 
   top_n(ROC, n = 10)
 
-best_tune3 <- readRDS("data/gbm_best_tune_train3.rds")
-best_tune3
 ```
 
 Get the AUC score and accuracy of the previous three models.
@@ -606,7 +611,7 @@ dtrain <- xgb.DMatrix(data = X_train2, label = y_train2)
 
 ```
 
-First, we generate rough parameters to test using manual grid search. The tuning result is as following.
+First, we use parameters with relatively bigger intervals for manual grid search. The tuning result is as following.
 
 ```{r eval = FALSE}
 ## create vector storing paremeters. 
@@ -652,7 +657,7 @@ xgb_tune <- arrange(xgb_tune, desc(xgb_tune$auc))
 xgb_tune
 ```
 
-As we can see from the table, almost all models perform better when nrounds is 30 compared to 20,so we conclude that the best nrounds may be larger than 30 and further tuning is needed. The best max_depth is 7 and best eta is 0.2.
+As we can see from the table, almost all models perform better with nrounds 30 than nrounds 20, indicating that the best nrounds may be larger than 30 and further tuning is necessary. The best max_depth is 7 and best eta is 0.2.
 
 We then use the preliminary result for further and more accurate training using caret package.
 
@@ -700,7 +705,7 @@ xgb_table <- xgb_train_1$results
 saveRDS(xgb_table, "data/xgb_tune_caret.rds")
 ```
 
-We found the best nrounds is 30. Up to now, we have got all best parameters for xgboost model we need. And we train the final model.
+We found the best nrounds is 30. Up to now, we have got all optimal parameters for xgboost model we need. And we train the final model.
 
 ```{r}
 xgb_tune_caret <- readRDS("data/xgb_tune_caret.rds")
@@ -735,7 +740,7 @@ AUC
 ```
 
 
-The final auc of the best xgboost model is `r round(AUC, 4)` and then we run predictions on test dataset. 
+The final auc of the optimal xgboost model is `r round(AUC, 4)` and then we run predictions on test dataset. 
 
 #### Model Comparisons
 
@@ -839,6 +844,8 @@ nn_preds %>%
 
 #### Question 2
 
+Grouping by target message type, we have the percentage of customers for whom that message maximizes their likelihood of purchases. 
+
 ```{r}
 nn_preds %>% 
   group_by(to_send_msg) %>% 
@@ -848,6 +855,8 @@ nn_preds %>%
 
 
 #### Question 3
+
+To get expected profits, we need to get order size given each message category. Based on non-representative data, we filtered out the buyers and use the average order size for each message type. Then we use the 40% profit and multiply by corresponding probability to reach the expected profits.
 
 ```{r}
 end_os <- pentathlon_nptb_total %>% 
@@ -913,15 +922,19 @@ nn_preds %>%
 
 #### Question 4
 
+Same with question2, we group by target message type and below is our percentage table. 
+
 ```{r}
-avg_perc <- nn_preds %>% 
+nn_preds %>% 
   group_by(to_send_ep_msg) %>% 
   summarise(perc = n()/nrow(nn_preds)) %>% 
   arrange(desc(perc))
-avg_perc
+
 ```
 
 #### Question 5
+
+Based on expected profit targeting, we can reach an average expected profit of 0.274 euros. 
 
 ```{r}
 target_ep <- mean(nn_preds$to_send_ep)
@@ -930,11 +943,15 @@ target_ep
 
 #### Question 6
 
+Below is a list of the average expected profits if we send each category of messages alone. 
+
 ```{r}
 colMeans(nn_preds[,c(11:17)])
 ```
 
 #### Question 7
+
+Since the original data is from customers with random messages, we use the original representative data to calculate random probabilities. As to the order size, we check the message type each customer actually receives and use the corresponding average order size for expected profit calculation. The mean value we have is 0.235 euro. 
 
 ```{r}
 # save average order size in a table
@@ -959,6 +976,8 @@ random_ep
 ```
 
 #### Question 8 
+
+Given a typical email blast of 5 million customers, we expect to see improvement as following. 
 
 ```{r}
 diff_euro <- (target_ep - random_ep) * 5000000

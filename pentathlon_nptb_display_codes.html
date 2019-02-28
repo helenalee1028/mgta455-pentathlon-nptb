@@ -372,6 +372,15 @@ $(document).ready(function () {
 
 </div>
 
+<div id="TOC">
+<ul>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#summary">Summary</a></li>
+<li><a href="#model-selection">Model Selection</a></li>
+<li><a href="#probability-prediction-on-representative-dataset">Probability prediction on representative dataset</a></li>
+<li><a href="#new-policy-proposal---flaw-and-improvement">New Policy Proposal - Flaw and Improvement</a></li>
+</ul>
+</div>
 
 <ul>
 <li>Team-lead gitlab id: 2724742</li>
@@ -398,6 +407,8 @@ pre, code, pre code {
 <h3>Setup</h3>
 <p>Please complete this Rmarkdown document by answering the questions in <code>pentathlon-nptb.pdf</code> on Dropbox (week8/readings/). The code block below will load the data you need. Please DO NOT change the code used to load the data. Create an HTML file with all your results and comments and push both the Rmarkdown and HTML file to GitLab when you are done. As always, all results MUST be reproducible (i.e., the TA and I must be able to recreate the HTML from the R-markdown file without changes or errors).</p>
 <p>Good luck!</p>
+<pre class="r"><code>## Loading the data from Dropbox/MGTA455-2019/data/
+pentathlon_nptb &lt;- readr::read_rds(file.path(radiant.data::find_dropbox(), &quot;MGTA455-2019/data/pentathlon_nptb.rds&quot;))</code></pre>
 </div>
 <div id="summary" class="section level3">
 <h3>Summary</h3>
@@ -418,10 +429,79 @@ pre, code, pre code {
 <div id="evaluation-metrics" class="section level4">
 <h4>Evaluation Metrics</h4>
 <p>First we define a function to evaluate models by AUC and accuracy.</p>
+<pre class="r"><code>cm &lt;- function(dat, vars){
+  
+  dat &lt;- na.omit(dat)
+  cm_df &lt;- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
+  colnames(cm_df) &lt;- c(&quot;var&quot;, &quot;auc&quot;, &quot;accuracy&quot;)
+  
+  for (i in 1:length(vars)){
+    
+    var &lt;- vars[i]
+    probs &lt;- pull(dat, !!var)
+    resp &lt;- pull(dat, &quot;buyer&quot;)
+    
+    predict &lt;- ifelse(pull(dat, !!var) &gt; 0.5, &quot;TRUE&quot;, &quot;FALSE&quot;) # predict whether a customer will buy 
+    
+    accuracy &lt;- (sum(resp == &quot;yes&quot; &amp; predict == &quot;TRUE&quot;) + sum(resp == &quot;no&quot; &amp; predict == &quot;FALSE&quot;))/nrow(dat)
+    
+    auc &lt;- ModelMetrics::auc(ifelse(resp==&quot;yes&quot;,1,0), probs)
+    
+    cm_vec &lt;- c(var, auc, accuracy)
+    cm_df[i,] &lt;- cm_vec
+  }
+  return(cm_df)
+}</code></pre>
 </div>
 <div id="logistic-regression" class="section level4">
 <h4>Logistic Regression</h4>
 <p>In logistic regression, we included all message related interaction terms to incorporate the fact that different customers act differently even to the same type of messages. Also, we included other interaction terms including income and frequency.</p>
+<pre class="r"><code># split into training, testing and representative datasets, and log-transform income
+nptb &lt;- pentathlon_nptb %&gt;% 
+  filter(!is.na(training)) %&gt;% 
+  mutate(income_ln = log(income+1)) # in case of zero incomes
+
+nptb_train &lt;- nptb %&gt;% 
+  filter(training == 1)
+
+nptb_test &lt;- nptb %&gt;% 
+  filter(training == 0)
+
+nptb_repr &lt;- pentathlon_nptb %&gt;% 
+  filter(representative == &quot;1&quot;) %&gt;% 
+  mutate(income_ln = log(income+1))
+
+# run logistic regression with message related interaction terms
+result &lt;- logistic(
+  nptb_train, 
+  rvar = &quot;buyer&quot;, 
+  evar = c(
+    &quot;message&quot;, &quot;age&quot;, &quot;gender&quot;, &quot;education&quot;, &quot;children&quot;, &quot;freq_endurance&quot;, 
+    &quot;freq_strength&quot;, &quot;freq_water&quot;, &quot;freq_team&quot;, &quot;freq_backcountry&quot;, 
+    &quot;freq_winter&quot;, &quot;freq_racquet&quot;, &quot;income_ln&quot;
+  ), 
+  lev = &quot;yes&quot;, 
+  int = c(
+    &quot;message:age&quot;, &quot;message:gender&quot;, 
+    &quot;message:education&quot;, 
+    &quot;message:children&quot;, &quot;message:freq_endurance&quot;, 
+    &quot;message:freq_strength&quot;, 
+    &quot;message:freq_water&quot;, 
+    &quot;message:freq_team&quot;, 
+    &quot;message:freq_backcountry&quot;, 
+    &quot;message:freq_winter&quot;, 
+    &quot;message:freq_racquet&quot;, 
+    &quot;message:income_ln&quot;, 
+    &quot;freq_endurance:income_ln&quot;, 
+    &quot;freq_strength:income_ln&quot;, 
+    &quot;freq_water:income_ln&quot;, 
+    &quot;freq_team:income_ln&quot;, 
+    &quot;freq_backcountry:income_ln&quot;, 
+    &quot;freq_winter:income_ln&quot;, 
+    &quot;freq_racquet:income_ln&quot;
+  )
+)
+summary(result)</code></pre>
 <pre><code>Logistic regression (GLM)
 Data                 : nptb_train
 Response variable    : buyer
@@ -550,11 +630,79 @@ Pseudo R-squared: 0.374
 Log-likelihood: -30394.869, AIC: 61013.737, BIC: 62039.237
 Chi-squared: 36250.868 df(111), p.value &lt; .001 
 Nr obs: 70,000 </code></pre>
+<pre class="r"><code># prediction on 30k test data
+logit_pred &lt;- predict(result, pred_data = nptb_test)</code></pre>
 </div>
 <div id="neural-network" class="section level4">
 <h4>Neural Network</h4>
 <p>Afterwards, we used single layer neural network to capture the interaction effects. In this step, we looped over node size from 1 to 10 and decay rates from 0.1 to 1. Then we used the optimal model to run predictions on test dataset.</p>
+<pre class="r"><code>## filter and sort the dataset
+nn_nptb_train &lt;- pentathlon_nptb %&gt;%
+  filter(training == 1) %&gt;%
+  select(custid:representative)
+register(&quot;nn_nptb_train&quot;, &quot;pentathlon_nptb&quot;)
+
+nn_nptb_test &lt;- pentathlon_nptb %&gt;%
+  filter(training == 0) %&gt;%
+  select(custid:representative)
+register(&quot;nn_nptb_test&quot;, &quot;pentathlon_nptb&quot;)</code></pre>
+<pre class="r"><code>## filter and sort the dataset
+pentathlon_nptb_train &lt;- pentathlon_nptb %&gt;%
+  filter(training == 1) %&gt;%
+  select(custid:representative)
+register(&quot;pentathlon_nptb_train&quot;, &quot;pentathlon_nptb&quot;)
+
+# dtab(pentathlon_nptb_train, dec = 2, nr = 100) %&gt;% render()
+pentathlon_nptb_test &lt;- pentathlon_nptb %&gt;%
+  filter(training == 0) %&gt;%
+  select(custid:representative)
+register(&quot;pentathlon_nptb_test&quot;, &quot;pentathlon_nptb&quot;)
+
+## create vector storing paremeters. 
+size = seq(1,10,1)
+decay = seq(0.1,1,0.1)
+
+## create grid search matrix
+params &lt;- expand.grid(size,decay)
+#params$auc &lt;- NA
+colnames(params) &lt;- c(&quot;size&quot;,'decay')
+
+auc &lt;- c()
+accuracy &lt;- c()
+for (i in 1:nrow(params)){
+ 
+  result &lt;- nn(
+  pentathlon_nptb_train, 
+  rvar = &quot;buyer&quot;, 
+  evar = c(
+    &quot;message&quot;, &quot;age&quot;, &quot;gender&quot;, &quot;income&quot;, &quot;education&quot;, &quot;children&quot;, 
+    &quot;freq_endurance&quot;, &quot;freq_strength&quot;, &quot;freq_water&quot;, &quot;freq_team&quot;, 
+    &quot;freq_backcountry&quot;, &quot;freq_winter&quot;, &quot;freq_racquet&quot;), 
+  lev = &quot;yes&quot;, 
+  size = params[i,1], 
+  decay = params[i,2], 
+  seed = 1234
+)
+  pred &lt;- predict(result, pred_data = pentathlon_nptb_test)
+  name_ &lt;- paste0('pred_nn',params[i,1],'_',params[i,2])
+  print(name_)
+  pentathlon_nptb_test &lt;- store(pentathlon_nptb_test, pred, name = name_)
+  
+  
+  
+  auc_ &lt;- cm(pentathlon_nptb_test,name_)$auc
+  accuracy_ &lt;- cm(pentathlon_nptb_test,name_)$accuracy
+  auc&lt;- c(auc,auc_)
+  accuracy &lt;-c(accuracy,accuracy_)
+}
+params$auc &lt;- auc
+params$accuracy &lt;- accuracy
+params &lt;- arrange(params, desc(params$accuracy))
+saveRDS(params, &quot;data/nn_tune.rds&quot;)</code></pre>
 <p>The best size is 7 and best decay is 0.1. We then predict based on this model.</p>
+<pre class="r"><code>nn_tune &lt;-readRDS(&quot;data/nn_tune.rds&quot;)
+nn_tune %&gt;% 
+  top_n(auc, n = 10)</code></pre>
 <pre><code>   size decay               auc          accuracy
 1     7   0.1         0.8909744 0.810366666666667
 2     5   0.2 0.890712542222222            0.8101
@@ -566,24 +714,130 @@ Nr obs: 70,000 </code></pre>
 8     4   0.4 0.890745644444444 0.809766666666667
 9     5   0.7 0.890735528888889 0.809766666666667
 10    6   0.4 0.890687004444444 0.809466666666667</code></pre>
+<pre class="r"><code>nn_result &lt;- nn(
+  nn_nptb_train, 
+  rvar = &quot;buyer&quot;, 
+  evar = c(
+    &quot;message&quot;, &quot;age&quot;, &quot;gender&quot;, &quot;income&quot;, &quot;education&quot;, &quot;children&quot;, 
+    &quot;freq_endurance&quot;, &quot;freq_strength&quot;, &quot;freq_water&quot;, &quot;freq_team&quot;, 
+    &quot;freq_backcountry&quot;, &quot;freq_winter&quot;, &quot;freq_racquet&quot;), 
+  lev = &quot;yes&quot;, 
+  size = 7, 
+  decay = 0.1, 
+  seed = 1234
+)
+nn_pred &lt;- predict(nn_result, pred_data = nn_nptb_test)</code></pre>
 </div>
 <div id="keras-mlp" class="section level4">
 <h4>Keras MLP</h4>
 <p>In keras deep learning models, we tried 2 and 3 hidden layers and compared the prediction performance on test dataset. The accuracy scores are both around 0.810 and the AUC scores around 0.886. The models perform rather similarly and we’ll go with 3-layer model for our predictions.</p>
+<pre class="r"><code>nptb_keras &lt;- pentathlon_nptb %&gt;% 
+  filter(representative == 0) %&gt;% 
+  select(-custid, -total_os, -endurance_os, -strength_os, -water_os,
+         -winter_os, -backcountry_os, -racquet_os, -team_os, -representative)
+
+# recipe for preprocessing
+nptb_keras_train &lt;- nptb_keras %&gt;% 
+  filter(training == 1) %&gt;% 
+  select(-training )
+
+nptb_keras_test &lt;- nptb_keras %&gt;% 
+  filter(training == 0) %&gt;% 
+  select(-training ) 
+
+rec_obj &lt;- recipe(buyer ~., data = nptb_keras_train) %&gt;% 
+  step_log(income + 1) %&gt;% 
+  step_dummy(message,age,gender) %&gt;% 
+  step_center(income,education,children,freq_endurance,freq_strength,freq_water,
+                freq_winter,freq_team,freq_backcountry,freq_racquet) %&gt;% 
+  step_scale(income,education,children,freq_endurance,freq_strength,freq_water,
+                freq_winter,freq_team,freq_backcountry,freq_racquet) %&gt;% 
+  prep(data = nptb_keras_train)
+
+Xtrain &lt;- bake(rec_obj, new_data = nptb_keras_train) %&gt;% select(-buyer)
+Xtest &lt;- bake(rec_obj, new_data = nptb_keras_test) %&gt;% select(-buyer)
+
+ytrain &lt;- ifelse(nptb_keras_train$buyer == &quot;yes&quot;,1,0)
+ytest &lt;- ifelse(nptb_keras_test$buyer == &quot;yes&quot;,1,0)
+
+model_keras &lt;- keras_model_sequential()
+
+model_keras &lt;- model_keras %&gt;% 
+  layer_dense(units = 16, activation = &quot;relu&quot;, input_shape = ncol(Xtrain)) %&gt;% 
+  layer_dropout(rate = 0.1) %&gt;% 
+  layer_dense(units = 16, activation = &quot;relu&quot;) %&gt;% 
+  layer_dropout(rate = 0.1) %&gt;% 
+  layer_dense(units = 1, activation = &quot;sigmoid&quot;)
+
+
+model_keras &lt;- model_keras %&gt;% 
+  compile(optimizer = &quot;sgd&quot;,
+          loss = &quot;binary_crossentropy&quot;,
+          metrics = c('accuracy'))
+
+history &lt;- fit(model_keras, x = as.matrix(Xtrain), y = ytrain,
+               batch_size = 50, epochs = 45, validation_split = 0.2)
+
+plot(history)</code></pre>
+<pre class="r"><code># try 3 layers and increase number of nodes
+model_keras2 &lt;- keras_model_sequential()
+
+model_keras2 &lt;- model_keras2 %&gt;% 
+  layer_dense(units = 20, activation = &quot;relu&quot;, input_shape = ncol(Xtrain)) %&gt;% 
+  layer_dropout(rate = 0.1) %&gt;% 
+  layer_dense(units = 20, activation = &quot;relu&quot;) %&gt;% 
+  layer_dropout(rate = 0.1) %&gt;% 
+  layer_dense(units = 20, activation = &quot;relu&quot;) %&gt;% 
+  layer_dropout(rate = 0.1) %&gt;% 
+  layer_dense(units = 1, activation = &quot;sigmoid&quot;)
+
+
+model_keras2 &lt;- model_keras2 %&gt;% 
+  compile(optimizer = &quot;sgd&quot;,
+          loss = &quot;binary_crossentropy&quot;,
+          metrics = c('accuracy'))
+
+history2 &lt;- fit(model_keras2, x = as.matrix(Xtrain), y = ytrain,
+               batch_size = 60, epochs = 45, validation_split = 0.2)
+
+plot(history2)</code></pre>
+<pre class="r"><code># evaluate accuracy on test dataset 
+
+keras1_pred &lt;- predict_proba(model_keras, x = as.matrix(Xtest)) 
+keras2_pred &lt;- predict_proba(model_keras2, x = as.matrix(Xtest)) 
+
+keras1_class &lt;- predict_classes(model_keras, x = as.matrix(Xtest))
+keras2_class &lt;- predict_classes(model_keras2, x = as.matrix(Xtest))
+
+estimates_keras &lt;- tibble::tibble(
+  truth = as.factor(ytest) %&gt;% fct_recode(yes = &quot;1&quot;, no = &quot;0&quot;),
+  estimate1 = as.factor(keras1_class) %&gt;% fct_recode(yes = &quot;1&quot;, no = &quot;0&quot;),
+  estimate2 = as.factor(keras2_class) %&gt;% fct_recode(yes = &quot;1&quot;, no = &quot;0&quot;),
+  pred_probs1 = as.vector(keras1_pred),
+  pred_probs2 = as.vector(keras2_pred))
+
+saveRDS(estimates_keras, &quot;estimates_keras.rds&quot;)</code></pre>
+<pre class="r"><code>estimates_keras &lt;- readRDS(&quot;data/estimates_keras.rds&quot;)
+
+options(yardstick.event_first = FALSE)
+estimates_keras %&gt;% metrics(truth, estimate1)</code></pre>
 <pre><code># A tibble: 2 x 3
   .metric  .estimator .estimate
   &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt;
 1 accuracy binary         0.810
 2 kap      binary         0.620</code></pre>
+<pre class="r"><code>estimates_keras %&gt;% metrics(truth, estimate2)</code></pre>
 <pre><code># A tibble: 2 x 3
   .metric  .estimator .estimate
   &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt;
 1 accuracy binary         0.810
 2 kap      binary         0.620</code></pre>
+<pre class="r"><code>estimates_keras %&gt;% roc_auc(truth, pred_probs1)</code></pre>
 <pre><code># A tibble: 1 x 3
   .metric .estimator .estimate
   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
 1 roc_auc binary         0.886</code></pre>
+<pre class="r"><code>estimates_keras %&gt;% roc_auc(truth, pred_probs2)</code></pre>
 <pre><code># A tibble: 1 x 3
   .metric .estimator .estimate
   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
@@ -592,6 +846,40 @@ Nr obs: 70,000 </code></pre>
 <div id="gradient-boosting-machine" class="section level4">
 <h4>Gradient Boosting Machine</h4>
 <p>In this part, we tuned GBM models 3 times and saved the optimal model from each round of tuning. In the end we choose the one with highest ROC-AUC and predict on test dataset.</p>
+<pre class="r"><code>train = pentathlon_nptb %&gt;%
+  filter(training == 1)
+test = pentathlon_nptb %&gt;%
+  filter(training == 0)
+
+## Get columns for gbm model
+train_gbm = train[c(&quot;buyer&quot;,&quot;message&quot;,&quot;age&quot;, &quot;gender&quot;, &quot;income&quot;, &quot;education&quot;, &quot;children&quot;, &quot;freq_endurance&quot;, &quot;freq_strength&quot;, &quot;freq_water&quot;, &quot;freq_team&quot;, &quot;freq_backcountry&quot;, &quot;freq_winter&quot;, &quot;freq_racquet&quot;)]
+test_gbm = test[c(&quot;buyer&quot;,&quot;message&quot;,&quot;age&quot;, &quot;gender&quot;, &quot;income&quot;, &quot;education&quot;, &quot;children&quot;, &quot;freq_endurance&quot;, &quot;freq_strength&quot;, &quot;freq_water&quot;, &quot;freq_team&quot;, &quot;freq_backcountry&quot;, &quot;freq_winter&quot;, &quot;freq_racquet&quot;)]</code></pre>
+<pre class="r"><code># Using caret
+caretGrid &lt;- expand.grid(interaction.depth = c(2,4,6), 
+                         n.trees = c(100,300),
+                         shrinkage = c(0.1,0.01),
+                         n.minobsinnode = c(20,40))
+trainControl &lt;- trainControl(method=&quot;cv&quot;, number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+set.seed(123)
+gbm_caret &lt;- train(buyer ~ ., 
+              data=train_gbm, 
+              distribution=&quot;bernoulli&quot;, 
+              method=&quot;gbm&quot;,
+              trControl=trainControl, verbose=FALSE,
+              tuneGrid=caretGrid, metric = &quot;ROC&quot;)
+
+print(gbm_caret)
+gbm_caret$results
+gbm_caret$bestTune
+
+saveRDS(gbm_caret$bestTune, &quot;data/gbm_best_tune_train1.rds&quot;)
+
+saveRDS(gbm_caret$results, &quot;data/gbm_tune_train1.rds&quot;)</code></pre>
+<pre class="r"><code>params1 &lt;- readRDS(&quot;data/gbm_tune_train1.rds&quot;)
+params1 %&gt;% 
+  arrange(desc(ROC)) %&gt;% 
+  top_n(ROC, n = 10)</code></pre>
 <pre><code>   shrinkage interaction.depth n.minobsinnode n.trees       ROC      Sens      Spec       ROCSD      SensSD      SpecSD
 1        0.1                 6             20     300 0.8878161 0.8176569 0.8033143 0.003281380 0.006765639 0.002905825
 2        0.1                 6             40     300 0.8877165 0.8166570 0.8027430 0.003387764 0.006287605 0.003190365
@@ -603,9 +891,33 @@ Nr obs: 70,000 </code></pre>
 8        0.1                 2             20     300 0.8843455 0.8142283 0.8039999 0.003564117 0.006250462 0.002682265
 9        0.1                 2             40     300 0.8843045 0.8143998 0.8037714 0.003607420 0.005550086 0.003203717
 10       0.1                 4             40     100 0.8842716 0.8154285 0.8001142 0.003398335 0.005256228 0.002880087</code></pre>
+<pre class="r"><code>best_tune1 &lt;- readRDS(&quot;data/gbm_best_tune_train1.rds&quot;)
+best_tune1</code></pre>
 <pre><code>   n.trees interaction.depth shrinkage n.minobsinnode
 22     300                 6       0.1             20</code></pre>
 <p>Based on the performance in the previous trunk, we narrowed down hyperparameter ranges and tuned for the second time.</p>
+<pre class="r"><code>caretGrid2 &lt;- expand.grid(interaction.depth = c(2,4,6), 
+                         n.trees = c(200,300,400),
+                         shrinkage = 0.1,
+                         n.minobsinnode = c(20,40))
+trainControl2 &lt;- trainControl(method=&quot;cv&quot;, number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+set.seed(123)
+gbm_caret2 &lt;- train(buyer ~ ., 
+              data=train_gbm, 
+              distribution=&quot;bernoulli&quot;, 
+              method=&quot;gbm&quot;,
+              trControl=trainControl2, verbose=FALSE,
+              tuneGrid=caretGrid2, metric = &quot;ROC&quot;)
+
+print(gbm_caret2)
+gbm_caret2$results
+
+saveRDS(gbm_caret2$results, &quot;data/gbm_tune_train2.rds&quot;)
+saveRDS(gbm_caret2$bestTune, &quot;data/gbm_best_tune_train2.rds&quot;)</code></pre>
+<pre class="r"><code>params2 &lt;- readRDS(&quot;data/gbm_tune_train2.rds&quot;)
+params2 %&gt;% 
+  arrange(desc(ROC)) %&gt;% 
+  top_n(ROC, n = 10)</code></pre>
 <pre><code>   shrinkage interaction.depth n.minobsinnode n.trees       ROC      Sens      Spec       ROCSD      SensSD      SpecSD
 1        0.1                 6             20     300 0.8877885 0.8164855 0.8042571 0.003462782 0.005080137 0.003053671
 2        0.1                 6             40     400 0.8877447 0.8189998 0.8030000 0.003414609 0.005760838 0.003276748
@@ -617,9 +929,34 @@ Nr obs: 70,000 </code></pre>
 8        0.1                 4             40     300 0.8874442 0.8169140 0.8036286 0.003507552 0.006736424 0.002642536
 9        0.1                 4             20     400 0.8874389 0.8162569 0.8037714 0.003327192 0.007250932 0.002942246
 10       0.1                 4             20     300 0.8871222 0.8149427 0.8043429 0.003221767 0.007239629 0.001956044</code></pre>
+<pre class="r"><code>best_tune2 &lt;- readRDS(&quot;data/gbm_best_tune_train2.rds&quot;)
+best_tune2</code></pre>
 <pre><code>   n.trees interaction.depth shrinkage n.minobsinnode
 14     300                 6       0.1             20</code></pre>
 <p>Tune hyperparameters for the third time and below are our results.</p>
+<pre class="r"><code>caretGrid3 &lt;- expand.grid(interaction.depth = 6, 
+                         n.trees = c(300,400),
+                         shrinkage = c(0.12,0.1,0.08),
+                         n.minobsinnode = c(20,30,40))
+trainControl3 &lt;- trainControl(method=&quot;cv&quot;, number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+set.seed(123)
+gbm_caret3 &lt;- train(buyer ~ ., 
+              data=train_gbm, 
+              distribution=&quot;bernoulli&quot;, 
+              method=&quot;gbm&quot;,
+              trControl=trainControl3, verbose=FALSE,
+              tuneGrid=caretGrid3, metric = &quot;ROC&quot;)
+#bag.fraction=0.75
+print(gbm_caret3)
+gbm_caret3$results
+
+saveRDS(gbm_caret3$results, &quot;data/gbm_tune_train3.rds&quot;)
+saveRDS(gbm_caret3$bestTune, &quot;data/gbm_best_tune_train3.rds&quot;)</code></pre>
+<pre class="r"><code>params3 &lt;- readRDS(&quot;data/gbm_tune_train3.rds&quot;)
+params3 %&gt;% 
+  arrange(desc(ROC)) %&gt;% 
+  top_n(ROC, n = 10)</code></pre>
 <pre><code>   shrinkage interaction.depth n.minobsinnode n.trees       ROC      Sens      Spec       ROCSD      SensSD      SpecSD
 1       0.08                 6             30     400 0.8880199 0.8176570 0.8027429 0.003093582 0.006357852 0.002962565
 2       0.08                 6             40     400 0.8879900 0.8184570 0.8015714 0.003155296 0.005217673 0.003267827
@@ -632,17 +969,130 @@ Nr obs: 70,000 </code></pre>
 9       0.10                 6             30     300 0.8877419 0.8161141 0.8032857 0.003478546 0.006001025 0.003274339
 10      0.10                 6             20     300 0.8877152 0.8176283 0.8025144 0.003154269 0.006316839 0.003444525</code></pre>
 <p>Get the AUC score and accuracy of the previous three models.</p>
+<pre class="r"><code># run predictions on test data based on the 3 optimal models from above
+
+prediction1 &lt;- predict(gbm_caret, newdata=test_gbm, type=&quot;prob&quot;, n.trees = 300)
+test_gbm$p_gbm_caret = prediction$yes
+
+prediction2 &lt;- predict(gbm_caret2, newdata=test_gbm, type=&quot;prob&quot;, n.trees = 300)
+test_gbm$p_gbm_caret2 = prediction2$yes
+
+prediction3 &lt;- predict(gbm_caret3, newdata=test_gbm, type=&quot;prob&quot;, n.trees = 400)
+test_gbm$p_gbm_caret3 = prediction3$yes
+
+vals = c('p_gbm_caret','p_gbm_caret2','p_gbm_caret3')
+cm(test_gbm,vals)
+saveRDS(cm(test_gbm,vals), &quot;gbm_tune_test_result.rds&quot;)</code></pre>
 <p>As we can see, the model with the highest AUC score is the third optimal model with n.trees = 400, interaction.depth = 6, shrinkage = 0.08 and n.minobsinnode = 30.</p>
+<pre class="r"><code>gbm_tune_results &lt;- readRDS(&quot;data/gbm_tune_test_result.rds&quot;)
+gbm_tune_results</code></pre>
 <pre><code>           var               auc          accuracy
 1  p_gbm_caret 0.888040391111111 0.808733333333333
 2 p_gbm_caret2 0.887909897777778             0.809
 3 p_gbm_caret3 0.888440468888889            0.8098</code></pre>
+<pre class="r"><code>best_tune3 &lt;- readRDS(&quot;data/gbm_best_tune_train3.rds&quot;)
+best_tune3</code></pre>
 <pre><code>  n.trees interaction.depth shrinkage n.minobsinnode
 4     400                 6      0.08             30</code></pre>
+<pre class="r"><code>train_gbm$buyer &lt;- ifelse(train_gbm$buyer  == &quot;yes&quot;, 1, 0)
+test_gbm$buyer &lt;- ifelse(test_gbm$buyer  == &quot;yes&quot;, 1, 0)
+
+best_gbm &lt;- gbm(formula = buyer ~ . , 
+                  data = train_gbm, 
+                  distribution = &quot;bernoulli&quot;, 
+                  interaction.depth = best_tune3[1,2],
+                  shrinkage = best_tune3[1,3],
+                  n.trees = best_tune3[1,1],
+                  n.minobsinnode = best_tune3[1,4])
+
+gbm_pred &lt;- predict(best_gbm, newdata = test_gbm, type = &quot;response&quot;, n.trees = best_tune3[1,1])</code></pre>
 </div>
 <div id="xgboost" class="section level4">
 <h4>XGBoost</h4>
+<pre class="r"><code># data pre-processing
+pentathlon_nptb_xgb &lt;- pentathlon_nptb
+
+temp &lt;- dummyVars(~message +age ,data = pentathlon_nptb_xgb)
+pred &lt;- predict(temp, newdata = pentathlon_nptb_xgb)
+
+# data specific for caret hyper-parameter tuning
+
+pentathlon_nptb_xgb &lt;- pentathlon_nptb_xgb %&gt;%
+  cbind(pred) %&gt;%
+  select(-c('custid','message','age','total_os','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.&lt; 30')) %&gt;%
+  mutate(buyer = as.factor(buyer),
+         gender =ifelse(gender == 'M',1,0))
+
+pentathlon_nptb_xgb_train &lt;- pentathlon_nptb_xgb %&gt;%
+  filter(training == 1) %&gt;%
+  select(-training)
+  
+pentathlon_nptb_xgb_test &lt;- pentathlon_nptb_xgb %&gt;%
+  filter(training == 0) %&gt;%
+  select(-training)
+
+#### Create xgboost-specific DMatrix
+
+X_train = pentathlon_nptb_xgb_train %&gt;% select(-buyer)
+y_train = pentathlon_nptb_xgb_train$buyer
+
+X_test = pentathlon_nptb_xgb_test %&gt;% select(-buyer)
+y_test =pentathlon_nptb_xgb_test$buyer
+
+# data specific for manual hyper-parameter tuning
+pentathlon_nptb_xgb_train2 &lt;- pentathlon_nptb_xgb_train %&gt;%
+  mutate(buyer = ifelse(buyer == 'yes',1,0))
+
+pentathlon_nptb_xgb_test2 &lt;- pentathlon_nptb_xgb_test %&gt;%
+  mutate(buyer = ifelse(buyer == 'yes',1,0))
+
+
+X_train2 = model.matrix(buyer~.,pentathlon_nptb_xgb_train2)
+y_train2 = pentathlon_nptb_xgb_train2$buyer
+
+X_test2 = model.matrix(buyer~.,pentathlon_nptb_xgb_test2)
+y_test2 = pentathlon_nptb_xgb_test2$buyer
+
+dtest &lt;- xgb.DMatrix(data = X_test2, label = y_test2)
+dtrain &lt;- xgb.DMatrix(data = X_train2, label = y_train2)</code></pre>
 <p>First, we use parameters with relatively bigger intervals for manual grid search. The tuning result is as following.</p>
+<pre class="r"><code>## create vector storing paremeters. 
+nrounds = c(20,30)
+objective = &quot;binary:logistic&quot;
+eta &lt;- c(0.2,0.3)
+max_depth &lt;- c(6,7,8)
+## create grid search matrix
+params &lt;- expand.grid(nrounds,objective,eta,max_depth)
+#params$auc &lt;- NA
+colnames(params) &lt;- c(&quot;nrounds&quot;,'objective', &quot;eta&quot;,'max_depth')
+
+
+AUC &lt;- c()
+train_auc &lt;-c()
+
+for (i in 1:nrow(params)){
+ 
+  xgb &lt;- xgb.train(
+    nrounds = params[i,1],
+    params = as.list(params[i,-1]),
+    data = dtrain,
+    watchlist = list(val = dtest, train = dtrain),
+    print_every_n = 10,
+    eval_metric = &quot;auc&quot;)
+  
+  auc_ &lt;- tail(xgb$evaluation_log$val_auc,1)
+  train_auc_ &lt;- tail(xgb$evaluation_log$train_auc,1)
+  AUC&lt;- c(AUC,auc_)
+  train_auc &lt;-c(train_auc,train_auc_)
+}
+
+params$auc &lt;- AUC
+params$train_auc &lt;- train_auc
+
+saveRDS(params, &quot;data/xgb_tune_manual.rds&quot;)</code></pre>
+<pre class="r"><code>xgb_tune &lt;-readRDS(&quot;data/xgb_tune_manual.rds&quot;)
+xgb_tune &lt;- arrange(xgb_tune, desc(xgb_tune$auc))
+xgb_tune</code></pre>
 <pre><code>   nrounds       objective eta max_depth      auc train_auc
 1       30 binary:logistic 0.2         7 0.887149  0.904600
 2       30 binary:logistic 0.2         6 0.887091  0.897233
@@ -658,35 +1108,168 @@ Nr obs: 70,000 </code></pre>
 12      30 binary:logistic 0.3         8 0.885341  0.916703</code></pre>
 <p>As we can see from the table, almost all models perform better with nrounds 30 than nrounds 20, indicating that the best nrounds may be larger than 30 and further tuning is necessary. The best max_depth is 7 and best eta is 0.2.</p>
 <p>We then use the preliminary result for further and more accurate training using caret package.</p>
+<pre class="r"><code>auc &lt;- function(data, lev = NULL, model = NULL) {
+  c(auc = radiant.model::auc(data$yes, data$obs, 'yes'))
+}
+
+
+xgb_grid_1 = expand.grid(
+  nrounds = c(30,50,100),
+  eta = c(0.2),
+  max_depth = c(7),
+  gamma = 1,
+  colsample_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  
+)
+
+xgb_trcontrol_1 = trainControl(
+  method = &quot;cv&quot;,
+  number = 2,
+ 
+  classProbs = TRUE,
+  #returnData = TRUE,
+  #returnResamp = &quot;all&quot;,                                                                               # set to TRUE for AUC to be computed
+  #search = 'grid',
+  summaryFunction = auc,
+  verboseIter = TRUE
+  #allowParallel = FALSE
+)
+
+xgb_train_1 = train(
+  x = X_train,
+  y = y_train,
+  trControl = xgb_trcontrol_1,
+  tuneGrid = xgb_grid_1,
+  metric = &quot;auc&quot;,
+  method = &quot;xgbTree&quot;
+)
+
+xgb_table &lt;- xgb_train_1$results
+saveRDS(xgb_table, &quot;data/xgb_tune_caret.rds&quot;)</code></pre>
 <p>We found the best nrounds is 30. Up to now, we have got all optimal parameters for xgboost model we need. And we train the final model.</p>
+<pre class="r"><code>xgb_tune_caret &lt;- readRDS(&quot;data/xgb_tune_caret.rds&quot;)
+xgb_tune_caret</code></pre>
 <pre><code>  eta max_depth gamma colsample_bytree min_child_weight subsample nrounds       auc       aucSD
 1 0.2         7     1              0.8               10       0.8      30 0.8852213 0.001475474
 2 0.2         7     1              0.8               10       0.8      50 0.8846889 0.001689353
 3 0.2         7     1              0.8               10       0.8     100 0.8821330 0.002177360</code></pre>
+<pre class="r"><code>params &lt;- list(
+  objective = &quot;binary:logistic&quot;,
+  eta = 0.2,
+  max_depth = 7,
+  colsamply_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  #gamma = 10
+)
+
+set.seed(123)
+xgb &lt;- xgb.train(
+    nrounds = 30,
+    params = params,
+    data = dtrain,
+    watchlist = list(val = dtest, train = dtrain),
+    print_every_n = 10,
+    eval_metric = &quot;auc&quot;)</code></pre>
 <pre><code>[1] val-auc:0.869572    train-auc:0.875842 
 [11]    val-auc:0.884124    train-auc:0.892998 
 [21]    val-auc:0.886629    train-auc:0.897846 
 [30]    val-auc:0.887121    train-auc:0.900223 </code></pre>
+<pre class="r"><code>xgb_pred &lt;- predict(xgb, dtest)
+
+AUC &lt;- tail(xgb$evaluation_log$val_auc,1)
+AUC</code></pre>
 <pre><code>[1] 0.887121</code></pre>
 <p>The final auc of the optimal xgboost model is 0.8871 and then we run predictions on test dataset.</p>
 </div>
 <div id="model-comparisons" class="section level4">
 <h4>Model Comparisons</h4>
 <p>We compared model performance in terms of AUC and accuracy. As we can see, Neural Network has the best performance and we’ll use this model for our further analysis.</p>
+<pre class="r"><code>eval_preds &lt;- cbind(logit_pred$Prediction, nn_pred$Prediction, xgb_pred, gbm_pred, estimates_keras$pred_probs2) %&gt;% as.data.frame()
+
+colnames(eval_preds) &lt;- c(&quot;logit&quot;, &quot;nn&quot;, &quot;xgb&quot;, &quot;gbm&quot;, &quot;keras&quot;)
+
+eval_preds$buyer &lt;- nptb_test$buyer
+
+vars &lt;- c(&quot;logit&quot;, &quot;nn&quot;, &quot;xgb&quot;, &quot;gbm&quot;, &quot;keras&quot;)
+
+cm_df &lt;- cm(eval_preds, vars)
+cm_df[2:3] &lt;- lapply(cm_df[2:3], as.numeric)
+cm_df</code></pre>
 <pre><code>    var       auc  accuracy
 1 logit 0.8832941 0.8068936
 2    nn 0.8909849 0.8103937
 3   xgb 0.8871360 0.8085270
-4   gbm 0.8889654 0.8096270
+4   gbm 0.8885936 0.8087936
 5 keras 0.8855282 0.8101603</code></pre>
 </div>
 </div>
 <div id="probability-prediction-on-representative-dataset" class="section level3">
 <h3>Probability prediction on representative dataset</h3>
 <p>First we run our optimal neural network model on the entire training dataset (non-representative data) and then use the model to predict prediction on representative data.</p>
+<pre class="r"><code># define a function to adjust prob
+adjust_prob &lt;- function(prob){
+  prob_adj &lt;- prob/(prob + (1 - prob) * 0.99 / 0.01)
+  prob_adj
+}</code></pre>
+<pre class="r"><code>## get representative dataset
+pentathlon_nptb_rep &lt;- pentathlon_nptb %&gt;%
+  filter(representative == 1) %&gt;%
+  select(custid:representative)
+register(&quot;pentathlon_nptb_rep&quot;, &quot;pentathlon_nptb&quot;)
+
+## get entire training data
+pentathlon_nptb_total &lt;- pentathlon_nptb %&gt;%
+  filter(representative == 0) %&gt;%
+  select(custid:representative)
+register(&quot;pentathlon_nptb_total&quot;, &quot;pentathlon_nptb&quot;)</code></pre>
+<pre class="r"><code>nn_result &lt;- nn(
+  pentathlon_nptb_total, 
+  rvar = &quot;buyer&quot;, 
+  evar = c(
+    &quot;message&quot;, &quot;age&quot;, &quot;gender&quot;, &quot;income&quot;, &quot;education&quot;, &quot;children&quot;, 
+    &quot;freq_endurance&quot;, &quot;freq_strength&quot;, &quot;freq_water&quot;, &quot;freq_team&quot;, 
+    &quot;freq_backcountry&quot;, &quot;freq_winter&quot;, &quot;freq_racquet&quot;
+  ), 
+  lev = &quot;yes&quot;, 
+  size = 7, 
+  decay = 0.1, 
+  seed = 1234
+)
+
+random_pred &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep)
+pred_rac &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'racquet'&quot;)
+pred_end &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'endurance'&quot;)
+pred_water &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'water'&quot;)
+pred_winter &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'winter'&quot;)
+pred_bc &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'backcountry'&quot;)
+pred_strg &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'strength'&quot;)
+pred_team &lt;- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = &quot;message = 'team'&quot;)</code></pre>
 <div id="question-1" class="section level4">
 <h4>Question 1</h4>
 <p>We adjusted predicted probablities to reflect the fact that true response rate is around 1% on average. For each customer, the target message type is the one that has the highest probability.</p>
+<pre class="r"><code># combine 7 message-specific predictions to a single dataframe
+combined_probs &lt;- lapply(ls(pattern = &quot;^pred_&quot;), get)
+nn_preds &lt;- sapply(combined_probs, '[[', &quot;Prediction&quot;) %&gt;% as.data.frame()
+nn_preds[] &lt;- lapply(nn_preds, adjust_prob)
+colnames(nn_preds) &lt;- ls(pattern = &quot;^pred_&quot;)
+
+# decide which message to send based on predicted probabilities
+message_types &lt;- c(&quot;backcountry&quot;, &quot;endurance&quot;, &quot;racquet&quot;, &quot;strength&quot;, &quot;team&quot;, &quot;water&quot;, &quot;winter&quot;)
+
+to_send_prob &lt;- do.call(pmax,nn_preds)
+to_send_msg &lt;- do.call(which.pmax, nn_preds) %&gt;% as.numeric()
+
+nn_preds$to_send_prob &lt;- to_send_prob
+nn_preds$to_send_msg &lt;- message_types[to_send_msg]
+
+nn_preds$custid &lt;- pentathlon_nptb_rep$custid
+
+nn_preds %&gt;% 
+  select(custid, to_send_prob, to_send_msg) %&gt;% 
+  head(10)</code></pre>
 <pre><code>      custid to_send_prob to_send_msg
 1  U45198803 0.0003535859    strength
 2  U22197752 0.0044993368   endurance
@@ -702,6 +1285,10 @@ Nr obs: 70,000 </code></pre>
 <div id="question-2" class="section level4">
 <h4>Question 2</h4>
 <p>Grouping by target message type, we have the percentage of customers for whom that message maximizes their likelihood of purchases.</p>
+<pre class="r"><code>nn_preds %&gt;% 
+  group_by(to_send_msg) %&gt;% 
+  summarise(perc = n()/nrow(nn_preds)) %&gt;% 
+  arrange(desc(perc))</code></pre>
 <pre><code># A tibble: 7 x 2
   to_send_msg    perc
   &lt;chr&gt;         &lt;dbl&gt;
@@ -716,6 +1303,64 @@ Nr obs: 70,000 </code></pre>
 <div id="question-3" class="section level4">
 <h4>Question 3</h4>
 <p>To get expected profits, we need to get order size given each message category. Based on non-representative data, we filtered out the buyers and use the average order size for each message type. Then we use the 40% profit and multiply by corresponding probability to reach the expected profits.</p>
+<pre class="r"><code>end_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;endurance&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+  
+strength_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;strength&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+bc_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;backcountry&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+rac_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;racquet&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+winter_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;winter&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+water_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;water&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+team_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(message== &quot;team&quot; &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+random_os &lt;- pentathlon_nptb_total %&gt;% 
+  filter(!is.na(training) &amp; total_os != 0) %&gt;% 
+  summarise(avg = mean(total_os)) %&gt;% 
+  pull()
+
+# get expected profits
+nn_preds$exp_bc &lt;- nn_preds$pred_bc * bc_os * 0.4
+nn_preds$exp_end &lt;- nn_preds$pred_end * end_os * 0.4
+nn_preds$exp_rac &lt;- nn_preds$pred_rac * rac_os * 0.4
+nn_preds$exp_strg &lt;- nn_preds$pred_strg * strength_os * 0.4
+nn_preds$exp_team &lt;- nn_preds$pred_team * team_os * 0.4
+nn_preds$exp_water &lt;- nn_preds$pred_water * water_os * 0.4
+nn_preds$exp_winter &lt;- nn_preds$pred_winter * winter_os * 0.4
+
+to_send_exp &lt;- do.call(pmax, nn_preds[, 11:17])
+to_send_exp_msg &lt;- do.call(which.pmax, nn_preds[, 11:17]) %&gt;% as.numeric()
+
+nn_preds$to_send_ep &lt;- to_send_exp
+nn_preds$to_send_ep_msg &lt;- message_types[to_send_exp_msg]
+
+nn_preds %&gt;% 
+  select(custid, to_send_ep, to_send_ep_msg) %&gt;% 
+  head(10)</code></pre>
 <pre><code>      custid  to_send_ep to_send_ep_msg
 1  U45198803 0.007857747       strength
 2  U22197752 0.105384449    backcountry
@@ -731,6 +1376,10 @@ Nr obs: 70,000 </code></pre>
 <div id="question-4" class="section level4">
 <h4>Question 4</h4>
 <p>Same with question2, we group by target message type and below is our percentage table.</p>
+<pre class="r"><code>nn_preds %&gt;% 
+  group_by(to_send_ep_msg) %&gt;% 
+  summarise(perc = n()/nrow(nn_preds)) %&gt;% 
+  arrange(desc(perc))</code></pre>
 <pre><code># A tibble: 7 x 2
   to_send_ep_msg    perc
   &lt;chr&gt;            &lt;dbl&gt;
@@ -745,23 +1394,49 @@ Nr obs: 70,000 </code></pre>
 <div id="question-5" class="section level4">
 <h4>Question 5</h4>
 <p>Based on expected profit targeting, we can reach an average expected profit of 0.274 euros.</p>
+<pre class="r"><code>target_ep &lt;- mean(nn_preds$to_send_ep)
+target_ep</code></pre>
 <pre><code>[1] 0.2744809</code></pre>
 </div>
 <div id="question-6" class="section level4">
 <h4>Question 6</h4>
 <p>Below is a list of the average expected profits if we send each category of messages alone.</p>
+<pre class="r"><code>colMeans(nn_preds[,c(11:17)])</code></pre>
 <pre><code>    exp_bc    exp_end    exp_rac   exp_strg   exp_team  exp_water exp_winter 
  0.2247535  0.2574531  0.2230813  0.2437802  0.2272564  0.2543682  0.2195021 </code></pre>
 </div>
 <div id="question-7" class="section level4">
 <h4>Question 7</h4>
 <p>Since the original data is from customers with random messages, we use the original representative data to calculate random probabilities. As to the order size, we check the message type each customer actually receives and use the corresponding average order size for expected profit calculation. The mean value we have is 0.235 euro.</p>
+<pre class="r"><code># save average order size in a table
+os_tbl &lt;- data.frame(bc_os, end_os, rac_os, strength_os, team_os, water_os, winter_os)
+os_tbl &lt;- os_tbl %&gt;% 
+  gather(key = &quot;type&quot;, value = value)
+
+os_tbl$type &lt;- c(&quot;backcountry&quot;, &quot;endurance&quot;, &quot;racquet&quot;, &quot;strength&quot;,&quot;team&quot;,&quot;water&quot;, &quot;winter&quot;)
+
+# multiply the corresponding order size to randomly assigned message type
+
+random_pred_adj &lt;- adjust_prob(random_pred$Prediction)
+nn_preds$random_prob &lt;- random_pred_adj
+nn_preds$random_message &lt;- as.character(pentathlon_nptb_rep$message)
+nn_preds &lt;- nn_preds %&gt;% left_join(os_tbl, by = c(&quot;random_message&quot; = &quot;type&quot;))
+nn_preds &lt;- nn_preds %&gt;% 
+  mutate(random_ep = value * random_prob * 0.4)
+
+random_ep &lt;- mean(nn_preds$random_ep)
+random_ep</code></pre>
 <pre><code>[1] 0.234674</code></pre>
 </div>
 <div id="question-8" class="section level4">
 <h4>Question 8</h4>
 <p>Given a typical email blast of 5 million customers, we expect to see improvement as following.</p>
+<pre class="r"><code>diff_euro &lt;- (target_ep - random_ep) * 5000000
+diff_perc &lt;- diff_euro/(random_ep * 5000000)
+
+print(paste0(&quot;The improvement in euros is &quot;, format_nr(diff_euro, dec = 2)))</code></pre>
 <pre><code>[1] &quot;The improvement in euros is 199,034.44&quot;</code></pre>
+<pre class="r"><code>print(paste0(&quot;The improvement in percentage is &quot;, format_nr(diff_perc, perc = T)))</code></pre>
 <pre><code>[1] &quot;The improvement in percentage is 16.96%&quot;</code></pre>
 </div>
 </div>

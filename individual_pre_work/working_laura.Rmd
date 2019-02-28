@@ -1,0 +1,150 @@
+---
+title: "working_laura"
+output: html_document
+---
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+  dpi = 96,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 4,
+  max.print = 5000,
+  stringsAsFactors = FALSE,
+  digits = 4
+)
+
+## load radiant packages if neededi
+if (!exists("r_environment")) library(radiant)
+```
+
+```{r}
+library(dplyr)
+library(tidyverse)
+```
+
+
+
+```{r}
+pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/pentathlon_nptb.rds"))
+
+# split into training, testing and representative datasets
+nptb <- pentathlon_nptb %>% 
+  filter(!is.na(training)) %>% 
+  mutate(cweight = ifelse(buyer == "yes", 1L, 99L),
+         income_ln = log(income))
+
+nptb_train <- nptb %>% 
+  filter(training == 1)
+
+nptb_test <- nptb %>% 
+  filter(training == 0)
+
+nptb_repr <- pentathlon_nptb %>% 
+  filter(representative == "1")
+
+```
+
+```{r}
+# run logistic regression
+
+vars <- colnames(nptb_train)
+logit_formula <- as.formula(paste("buyer=='yes'",paste(vars[c(4:6, 8:16, 27)], collapse = '+'), sep = "~"))
+
+logit_model_w <- glm(formula = logit_formula, data = nptb_train, family = "binomial", weights = cweight)
+summary(logit_model_w)
+```
+
+
+```{r}
+logit_inter <- logistic(
+  nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "education", "children", "freq_endurance", 
+    "freq_strength", "freq_water", "freq_team", "freq_backcountry", 
+    "freq_winter", "freq_racquet", "income_ln"
+  ), 
+  lev = "yes", 
+  int = c(
+    "message:freq_endurance", 
+    "message:freq_strength", 
+    "message:freq_water", 
+    "message:freq_team", 
+    "message:freq_winter", 
+    "freq_endurance:income_ln", 
+    "freq_strength:income_ln", 
+    "freq_water:income_ln", 
+    "freq_team:income_ln", 
+    "freq_winter:income_ln", 
+    "freq_racquet:income_ln"
+  ), 
+  wts = "cweight", 
+)
+summary(logit_inter)
+```
+
+
+# logit model choice
+```{r}
+result <- logistic(
+  nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "education", "children", "freq_endurance", 
+    "freq_strength", "freq_water", "freq_team", "freq_backcountry", 
+    "freq_winter", "freq_racquet", "income_ln"
+  ), 
+  lev = "yes", 
+  int = c(
+    "message:age", "message:gender", 
+    "message:education", 
+    "message:children", "message:freq_endurance", 
+    "message:freq_strength", 
+    "message:freq_water", 
+    "message:freq_team", 
+    "message:freq_backcountry", 
+    "message:freq_winter", 
+    "message:freq_racquet", 
+    "message:income_ln", 
+    "freq_endurance:income_ln", 
+    "freq_strength:income_ln", 
+    "freq_water:income_ln", 
+    "freq_team:income_ln", 
+    "freq_backcountry:income_ln", 
+    "freq_winter:income_ln", 
+    "freq_racquet:income_ln"
+  ), 
+  wts = "cweight", 
+  data_filter = "training == 1"
+)
+summary(result)
+
+pred_rac <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'racquet'")
+pred_end <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'endurance'")
+pred_water <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'water'")
+pred_winter <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'winter'")
+pred_bc <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'backcountry'")
+pred_strg <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'strength'")
+pred_team <- predict(result, pred_data = nptb_test, pred_cmd = "message = 'team'")
+
+```
+
+```{r}probs <- lapply(ls(pattern = "^pred_"), get)[-1]
+test <- sapply(pred_probs, '[[', "Prediction")
+
+df_list <- lapply(ls(pattern="perf_")[-1], get)
+profits <- c(expected_profit, sapply(df_list, "[[", "profit"))
+romes <- c(rome, sapply(df_list, "[[", "rome"))
+```
+
