@@ -57,7 +57,7 @@ pred <- predict(result, pred_data = pentathlon_nptb_test)
 pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_logit")
 ```
 
-Calculate accuracy.
+create a function to alculate auc and accuracy.
 ```{r}
 cm <- function(dat, vars){
   
@@ -87,3 +87,157 @@ cm <- function(dat, vars){
 ```{r}
 cm(pentathlon_nptb_test,'pred_logit')
 ```
+Grid search for neural network.
+
+Neural network nn=2,3,4,5,6,7,8,9,10
+decay = 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9
+
+Grid search
+```{r eval = FALSE}
+## create vector storing paremeters. 
+size = seq(1,10,1)
+decay = seq(0.1,1,0.1)
+
+## create grid search matrix
+params <- expand.grid(size,decay)
+#params$auc <- NA
+colnames(params) <- c("size",'decay')
+
+auc <- c()
+accuracy <- c()
+for (i in 1:nrow(params)){
+ 
+  result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"), 
+  lev = "yes", 
+  size = params[i,1], 
+  decay = params[i,2], 
+  seed = 1234
+)
+  pred <- predict(result, pred_data = pentathlon_nptb_test)
+  name_ <- paste0('pred_nn',params[i,1],'_',params[i,2])
+  print(name_)
+  pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = name_)
+  
+  
+  
+  auc_ <- cm(pentathlon_nptb_test,name_)$auc
+  accuracy_ <- cm(pentathlon_nptb_test,name_)$accuracy
+  auc<- c(auc,auc_)
+  accuracy <-c(accuracy,accuracy_)
+}
+params$auc <- auc
+params$accuracy <- accuracy
+params <- arrange(params, desc(params$accuracy))
+saveRDS(params, "nn_tune.rds")
+```
+
+
+
+```{r}
+nn_tune <-readRDS("nn_tune.rds")
+nn_tune
+```
+
+
+xgboost model with caret
+
+Create dataframe needed.
+
+```{r}
+library(caret)
+library(xgboost)
+
+pentathlon_nptb_xgb <- pentathlon_nptb
+
+temp <- dummyVars(~message +age ,data = pentathlon_nptb_xgb)
+pred <- predict(temp, newdata = pentathlon_nptb_xgb)
+
+pentathlon_nptb_xgb <- pentathlon_nptb_xgb %>%
+  cbind(pred) %>%
+  select(-c('custid','message','age','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.< 30')) %>%
+  mutate(buyer = as.factor(buyer),
+         gender =ifelse(gender == 'M',1,0))
+```
+
+
+```{r}
+pentathlon_nptb_xgb_train <- pentathlon_nptb_xgb %>%
+  filter(training == 1) %>%
+  select(-training)
+  
+pentathlon_nptb_xgb_test <- pentathlon_nptb_xgb %>%
+  filter(training == 0) %>%
+  select(-training)
+
+#### Create xgboost-specific DMatrix
+
+X_train = pentathlon_nptb_xgb_train %>% select(-buyer)
+y_train = pentathlon_nptb_xgb_train$buyer
+
+X_test = pentathlon_nptb_xgb_test %>% select(-buyer)
+y_test =pentathlon_nptb_xgb_test$buyer
+
+#dtest <- xgb.DMatrix(data = X_test, label = y_test)
+#dtrain <- xgb.DMatrix(data = X_train, label = y_train)
+```
+
+A very general parameter search.
+
+```{r}
+
+auc <- function(data, lev = NULL, model = NULL) {
+  c(auc = radiant.model::auc(data$yes, data$obs, 'yes'))
+}
+
+
+xgb_grid_1 = expand.grid(
+  nrounds = c(20),
+  eta = c(0.3),
+  max_depth = c(2, 4),
+  gamma = 1,
+  colsample_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  
+)
+
+xgb_trcontrol_1 = trainControl(
+  method = "cv",
+  number = 2,
+  verboseIter = TRUE,
+  classProbs = TRUE,
+  #returnData = TRUE,
+  #returnResamp = "all",                                                                               # set to TRUE for AUC to be computed
+  #search = 'grid',
+  summaryFunction = auc
+  #allowParallel = FALSE
+)
+
+xgb_train_1 = train(
+  x = X_train,
+  y = y_train,
+  trControl = xgb_trcontrol_1,
+  tuneGrid = xgb_grid_1,
+  metric = "auc",
+  method = "xgbTree"
+)
+
+```
+
+```{r}
+
+xgb_train_1$results
+
+```
+
+```{r}
+cl <- makeCluster(10,type = 'SOCK')
+registerDoSNOW(cl)
+```
+
