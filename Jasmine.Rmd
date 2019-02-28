@@ -144,11 +144,12 @@ params <- arrange(params, desc(params$accuracy))
 saveRDS(params, "nn_tune.rds")
 ```
 
+Get the result
 
 ```{r} 
 nn_tune <-readRDS("nn_tune.rds")
+nn_tune <- arrange(nn_tune,desc(nn_tune$auc))
 head(nn_tune)
-
 ```
 
 The best size is 9 and best decay is 0.8. We then predict based on this model.
@@ -343,7 +344,6 @@ readRDS("data/xgb_tune_caret.rds")
 We found the best nrounds is 30. 
 
 Up to now, we have got all best parameters for xgboost model we need. And we train the final model.
-
 ```{r eval = FALSE}
 params <- list(
   objective = "binary:logistic",
@@ -375,3 +375,82 @@ AUC
 ```
 
 The final auc of the best xgboost model is 0.8871 and the prediction is stored in column：pred_xgb in test set.
+
+
+```{r}
+A <- pentathlon_nptb_train %>%
+  select(c('buyer','total_os','message','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os'))
+
+A <- A %>%
+  group_by(message) %>%
+  summarize(count = n(),
+        sum_ = sum(total_os),
+        no_buy = sum(buyer == 'yes'),
+        mean = sum(total_os) / sum(buyer == 'yes'))
+
+```
+
+nn with size = 7, decay = 0.1
+
+```{r}
+
+result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"), 
+  lev = "yes", 
+  size = 7, 
+  decay = 0.1, 
+  seed = 1234
+)
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = 'pred_nn_final')
+
+```
+
+Create data
+
+```{r}
+## filter and sort the dataset
+pentathlon_nptb_rep <- pentathlon_nptb %>%
+  filter(representative == 1) %>%
+  select(custid:representative)
+register("pentathlon_nptb_rep", "pentathlon_nptb")
+# dtab(pentathlon_nptb_rep, dec = 2, nr = 100) %>% render()
+```
+
+
+```{r}
+## filter and sort the dataset
+pentathlon_nptb_total <- pentathlon_nptb %>%
+  filter(representative == 0) %>%
+  select(custid:representative)
+register("pentathlon_nptb_total", "pentathlon_nptb")
+# dtab(pentathlon_nptb_total, dec = 2, nr = 100) %>% render()
+```
+
+```{r}
+
+result <- nn(
+  pentathlon_nptb_total, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  size = 7, 
+  decay = 0.1, 
+  seed = 1234
+)
+summary(result, prn = TRUE)
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep)
+#print(pred, n = 10)
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7")
+
+```
