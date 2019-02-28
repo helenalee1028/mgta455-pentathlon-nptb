@@ -1,6 +1,9 @@
 ---
 title: "Pentathlon III: Next Product to Buy Modeling"
-output: html_document
+output: 
+  html_document:
+    toc: true
+
 ---
 
 * Team-lead gitlab id: 2724742
@@ -704,7 +707,6 @@ xgb_tune_caret <- readRDS("data/xgb_tune_caret.rds")
 xgb_tune_caret
 ```
 
-The final auc of the best xgboost model is `r round(AUC, 4)` and then we run predictions on test dataset. 
 
 ```{r}
 params <- list(
@@ -731,6 +733,9 @@ xgb_pred <- predict(xgb, dtest)
 AUC <- tail(xgb$evaluation_log$val_auc,1)
 AUC
 ```
+
+
+The final auc of the best xgboost model is `r round(AUC, 4)` and then we run predictions on test dataset. 
 
 #### Model Comparisons
 
@@ -843,38 +848,6 @@ nn_preds %>%
 
 
 #### Question 3
-
-```{r}
-# regress order size
-pentathlon_nptb_os <- pentathlon_nptb_total %>% 
-  mutate(total_os_ln = log(total_os))
-
-
-lm_result <- regress(
-  pentathlon_nptb_os, 
-  rvar = "total_os_ln", 
-  evar = c(
-    "message", "age", "income", "education", "children", "freq_endurance", 
-    "freq_strength", "freq_water", "freq_team", "freq_backcountry", 
-    "freq_winter", "freq_racquet"
-  ), 
-  data_filter = "buyer == 'yes'"
-)
-summary(lm_result, sum_check = "rmse")
-
-# use model to predict order size for each customer if they purchase
-
-lm_os_random <- predict(lm_result, pred_data = pentathlon_nptb_rep)$Prediction
-lm_os_end <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'endurance'")$Prediction
-lm_os_rac <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'racquet'")$Prediction
-lm_os_water <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'water'")$Prediction
-lm_os_winter <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'winter'")$Prediction
-lm_os_bc <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'backcountry'")$Prediction
-lm_os_strg <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'strength'")$Prediction
-lm_os_team <- predict(lm_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'team'")$Prediction
-
-```
-
 
 ```{r}
 end_os <- pentathlon_nptb_total %>% 
