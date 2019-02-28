@@ -950,5 +950,12 @@ print(paste0("The improvement in euros is ", format_nr(diff_euro, dec = 2)))
 print(paste0("The improvement in percentage is ", format_nr(diff_perc, perc = T)))
 ```
 
+### Cross validation on full dataset
 
+```{r}
 
+```
+
+### New Policy Proposal - Flaw and Improvement
+
+If promotional emails were assigned on a monthly basis as proposed, a customer would only get 2 types of messages each month. There are 2 potential problems. First and foremost, the analytics team wouldn't get information on the effect of other types of message and the customer would get stuck with the same 2 categories of emails. As a result, this proposal can't capture change in customers' preference. A customer may have purchased one category of products but wish to move on to other products.
