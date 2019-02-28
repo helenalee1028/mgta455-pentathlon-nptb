@@ -372,6 +372,35 @@ $(document).ready(function () {
 
 </div>
 
+<div id="TOC">
+<ul>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#summary">Summary</a><ul>
+<li><a href="#analytics-process">Analytics Process</a></li>
+<li><a href="#key-findings">Key Findings</a></li>
+</ul></li>
+<li><a href="#model-selection">Model Selection</a><ul>
+<li><a href="#evaluation-metrics">Evaluation Metrics</a></li>
+<li><a href="#logistic-regression">Logistic Regression</a></li>
+<li><a href="#neural-network">Neural Network</a></li>
+<li><a href="#keras-mlp">Keras MLP</a></li>
+<li><a href="#gradient-boosting-machine">Gradient Boosting Machine</a></li>
+<li><a href="#xgboost">XGBoost</a></li>
+<li><a href="#model-comparisons">Model Comparisons</a></li>
+</ul></li>
+<li><a href="#probability-prediction-on-representative-dataset">Probability prediction on representative dataset</a><ul>
+<li><a href="#question-1">Question 1</a></li>
+<li><a href="#question-2">Question 2</a></li>
+<li><a href="#question-3">Question 3</a></li>
+<li><a href="#question-4">Question 4</a></li>
+<li><a href="#question-5">Question 5</a></li>
+<li><a href="#question-6">Question 6</a></li>
+<li><a href="#question-7">Question 7</a></li>
+<li><a href="#question-8">Question 8</a></li>
+</ul></li>
+<li><a href="#new-policy-proposal---flaw-and-improvement">New Policy Proposal - Flaw and Improvement</a></li>
+</ul>
+</div>
 
 <ul>
 <li>Team-lead gitlab id: 2724742</li>
@@ -403,10 +432,25 @@ pre, code, pre code {
 <h3>Summary</h3>
 <div id="analytics-process" class="section level4">
 <h4>Analytics Process</h4>
-<p><em>1. Model selection </em> * Used logistic regression, Keras Deep Learning, Neural Network, GBM and XGboost to fit training data (variable ‘training’ equals 1) and get the optimal model which yields the highest AUC score in test dataset (variable ‘training’ equals 0).</p>
-<p><em>2. Probability prediction</em> * After selecting the optimal model, we train the model again on the entire dataset where variable ‘representative’ equals 0. * Then we use the real test dataset where variable ‘representative’ equals 1 for prediction. 8 series of predictions were generated to represent customers’ purchasing probability upon receiving endurance, strength, backcountry, racquet, winter, water, team or any of the 7 categories of messages, respectively. * Predicted probabilities were adjusted to accommodate the actual purchasing proportion, which is around 1% on average.</p>
-<p><em>3. Message Type for Email Marketing Campaign</em> * message type based on the highest ranked probability - For example, if the likelihood of a customer purchasing is highest when we send him a message on endurance products, then endurance message is the target message type. * message type based on the highest ranked expected profits - The average order size for each message type is the average total order size for customers who receive that particular message type and purchase. To get the expected profits, we multiply the predicted probability by the average order size and profit rate of 40%. The target message category is the one with the highest expected profit for each customer.</p>
-<p><em>4. Effectiveness Measurement of NPTB Strategy</em> * Given a typical promotional email blast to 5,000,000 customers, we calculated the improvement of expected profits with targeting procedure over with random assignment, both in terms of absolute euros and in percentage.</p>
+<p><strong>1. Model selection</strong></p>
+<ul>
+<li>Used logistic regression, Keras Deep Learning, Neural Network, GBM and XGboost to fit training data (variable ‘training’ equals 1) and get the optimal model which yields the highest AUC score in test dataset (variable ‘training’ equals 0).</li>
+</ul>
+<p><strong>2. Probability prediction</strong></p>
+<ul>
+<li>After selecting the optimal model, we train the model again on the entire dataset where variable ‘representative’ equals 0.</li>
+<li>Then we use the real test dataset where variable ‘representative’ equals 1 for prediction. 8 series of predictions were generated to represent customers’ purchasing probability upon receiving endurance, strength, backcountry, racquet, winter, water, team or any of the 7 categories of messages, respectively.</li>
+<li>Predicted probabilities were adjusted to accommodate the actual purchasing proportion, which is around 1% on average.</li>
+</ul>
+<p><strong>3. Message Type for Email Marketing Campaign</strong></p>
+<ul>
+<li>message type based on the highest ranked probability - For example, if the likelihood of a customer purchasing is highest when we send him a message on endurance products, then endurance message is the target message type.</li>
+<li>message type based on the highest ranked expected profits - The average order size for each message type is the average total order size for customers who receive that particular message type and purchase. To get the expected profits, we multiply the predicted probability by the average order size and profit rate of 40%. The target message category is the one with the highest expected profit for each customer.</li>
+</ul>
+<p><strong>4. Effectiveness Measurement of NPTB Strategy</strong></p>
+<ul>
+<li>Given a typical promotional email blast to 5,000,000 customers, we calculated the improvement of expected profits with targeting procedure over with random assignment, both in terms of absolute euros and in percentage.</li>
+</ul>
 </div>
 <div id="key-findings" class="section level4">
 <h4>Key Findings</h4>
@@ -631,7 +675,6 @@ Nr obs: 70,000 </code></pre>
 8       0.10                 6             20     400 0.8877448 0.8174283 0.8022572 0.003205784 0.005874196 0.003248369
 9       0.10                 6             30     300 0.8877419 0.8161141 0.8032857 0.003478546 0.006001025 0.003274339
 10      0.10                 6             20     300 0.8877152 0.8176283 0.8025144 0.003154269 0.006316839 0.003444525</code></pre>
-<p>Get the AUC score and accuracy of the previous three models.</p>
 <p>As we can see, the model with the highest AUC score is the third optimal model with n.trees = 400, interaction.depth = 6, shrinkage = 0.08 and n.minobsinnode = 30.</p>
 <pre><code>           var               auc          accuracy
 1  p_gbm_caret 0.888040391111111 0.808733333333333
@@ -677,13 +720,13 @@ Nr obs: 70,000 </code></pre>
 1 logit 0.8832941 0.8068936
 2    nn 0.8909849 0.8103937
 3   xgb 0.8871360 0.8085270
-4   gbm 0.8889654 0.8096270
+4   gbm 0.8884532 0.8088270
 5 keras 0.8855282 0.8101603</code></pre>
 </div>
 </div>
 <div id="probability-prediction-on-representative-dataset" class="section level3">
 <h3>Probability prediction on representative dataset</h3>
-<p>First we run our optimal neural network model on the entire training dataset (non-representative data) and then use the model to predict prediction on representative data.</p>
+<p>First we run our optimal neural network model on the entire training dataset (non-representative data) and then use the model to run predictions on representative data.</p>
 <div id="question-1" class="section level4">
 <h4>Question 1</h4>
 <p>We adjusted predicted probablities to reflect the fact that true response rate is around 1% on average. For each customer, the target message type is the one that has the highest probability.</p>

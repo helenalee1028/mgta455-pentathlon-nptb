@@ -3,7 +3,7 @@ title: "Pentathlon III: Next Product to Buy Modeling"
 output: 
   html_document:
     toc: true
-    toc_depth: 2
+    toc_depth: 4
 
 ---
 
@@ -17,13 +17,13 @@ output:
 ## initial settings
 knitr::opts_chunk$set(
   comment = NA,
-  echo = FALSE,
+  echo = TRUE,
   error = TRUE,
   cache = FALSE,
   message = FALSE,
   dpi = 96,
   warning = FALSE, 
-  digits = 4
+  digits = 5
 )
 
 ## width to use when printing tables etc.
@@ -80,19 +80,23 @@ pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA
 ### Summary 
 #### Analytics Process
 
-*1. Model selection *
+**1. Model selection**
+
 * Used logistic regression, Keras Deep Learning, Neural Network, GBM and XGboost to fit training data (variable ‘training’ equals 1) and get the optimal model which yields the highest AUC score in test dataset (variable ‘training’ equals 0). 
 
-*2. Probability prediction*
+**2. Probability prediction**
+
 * After selecting the optimal model, we train the model again on the entire dataset where variable ‘representative’ equals 0. 
 * Then we use the real test dataset where variable ‘representative’ equals 1 for prediction. 8 series of predictions were generated to represent customers’ purchasing probability upon receiving endurance, strength, backcountry, racquet, winter, water, team or any of the 7 categories of messages, respectively. 
 * Predicted probabilities were adjusted to accommodate the actual purchasing proportion, which is around 1% on average.
 
-*3. Message Type for Email Marketing Campaign*
+**3. Message Type for Email Marketing Campaign**
+
 * message type based on the highest ranked probability - For example, if the likelihood of a customer purchasing is highest when we send him a message on endurance products, then endurance message is the target message type. 
 * message type based on the highest ranked expected profits - The average order size for each message type is the average total order size for customers who receive that particular message type and purchase. To get the expected profits, we multiply the predicted probability by the average order size and profit rate of 40%. The target message category is the one with the highest expected profit for each customer.
 
-*4. Effectiveness Measurement of NPTB Strategy*
+**4. Effectiveness Measurement of NPTB Strategy**
+
 * Given a typical promotional email blast to 5,000,000 customers, we calculated the improvement of expected profits with targeting procedure over with random assignment, both in terms of absolute euros and in percentage.
 
 #### Key Findings
@@ -516,7 +520,6 @@ params3 %>%
 
 ```
 
-Get the AUC score and accuracy of the previous three models.
 
 ```{r eval=FALSE}
 # run predictions on test data based on the 3 optimal models from above
@@ -763,7 +766,7 @@ cm_df
 
 ### Probability prediction on representative dataset
 
-First we run our optimal neural network model on the entire training dataset (non-representative data) and then use the model to predict prediction on representative data. 
+First we run our optimal neural network model on the entire training dataset (non-representative data) and then use the model to run predictions on representative data. 
 
 ```{r}
 # define a function to adjust prob
