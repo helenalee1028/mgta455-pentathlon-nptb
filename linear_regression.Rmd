@@ -1,0 +1,38 @@
+---
+title: "Untitled"
+output: html_document
+---
+```{r}
+train1 = pentathlon_nptb %>%
+  filter(representative == 0)
+test1 = pentathlon_nptb %>%
+  filter(representative == 1)
+```
+
+```{r}
+## create new variable(s)
+train <- mutate(train, total_os_t = total_os + 1, freq_endurance_t = freq_endurance + 1, freq_strength_t = freq_strength + 1, freq_water_t = freq_water + 1, freq_team_t = freq_team + 1, freq_backcountry_t = freq_backcountry + 1, freq_winter_t = freq_winter + 1, freq_racquet_t = freq_racquet + 1)
+## transform variable
+train <- mutate_ext(train, .vars = vars(total_os_t, freq_endurance_t, freq_strength_t, freq_water_t, freq_team_t, freq_backcountry_t, freq_winter_t, freq_racquet_t), .funs = funs(log), .ext = "_ln")
+```
+
+
+```{r}
+## create new variable(s)
+test <- mutate(test, total_os_t = total_os + 1)
+## transform variable
+test <- mutate_ext(test, .vars = vars(total_os_t), .funs = funs(log), .ext = "_ln")
+```
+
+```{r}
+regression <- regress(
+  train, 
+  rvar = "total_os_t_ln", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance_t_ln", "freq_strength_t_ln", "freq_water_t_ln", "freq_team_t_ln", 
+    "freq_backcountry_t_ln", "freq_winter_t_ln", "freq_racquet_t_ln"
+  )
+)
+summary(regression)
+```
