@@ -3,11 +3,11 @@ title: "Pentathlon III: Next Product to Buy Modeling"
 output: html_document
 ---
 
-* Team-lead gitlab id:
-* Team-lead gitlab username:
-* Group number:
-* Group name:
-* Team member names:
+* Team-lead gitlab id: 2724742
+* Team-lead gitlab username: rsm-wel030
+* Group number: 10
+* Group name: Group_10
+* Team member names: Wenrui Li, Shumeng Shi, Menghui Zhang
 
 ```{r r_setup, include = FALSE}
 ## initial settings
@@ -31,6 +31,18 @@ options(
 
 ## load radiant packages if neededi
 if (!exists("r_environment")) library(radiant)
+```
+
+```{r include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(caret)
+library(recipes)
+library(keras)
+library(yardstick)
+library(ggplot2)
+library(gbm)
+library(ModelMetrics)
 ```
 
 <style>
@@ -59,9 +71,29 @@ Good luck!
 pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/pentathlon_nptb.rds"))
 ```
 
-## Question answers
+### Summary of Analysis Report
 
-Modify cm function to get auc and accuracy metric.
+1. Model selection 
+* Used logistic regression, Keras Deep Learning, Neural Network, GBM and XGboost to fit training data (variable ‘training’ equals 1) and get the optimal model which yields the highest AUC score in test dataset (variable ‘training’ equals 0). 
+
+2. Probability prediction
+* After selecting the optimal model, we train the model again on the entire dataset where variable ‘representative’ equals 0. 
+* Then we use the real test dataset where variable ‘representative’ equals 1 for prediction. 8 series of predictions were generated to represent customers’ purchasing probability upon receiving endurance, strength, backcountry, racquet, winter, water, team or any of the 7 categories of messages, respectively. 
+* Predicted probabilities were adjusted to accommodate the actual purchasing proportion, which is around 1% on average.
+
+3. Message Type for Email Marketing Campaign
+* message type based on the highest ranked probability - For example, if the likelihood of a customer purchasing is highest when we send him a message on endurance products, then endurance message is the target message type. 
+* message type based on the highest ranked expected profits - The average order size for each message type is the average total order size for customers who receive that particular message type and purchase. To get the expected profits, we multiply the predicted probability by the average order size and profit rate of 40%. The target message category is the one with the highest expected profit for each customer.
+
+4. Effectiveness Measurement of NPTB Strategy
+* Given a typical promotional email blast to 5,000,000 customers, we calculated the improvement of expected profits with targeting procedure over with random assignment, both in terms of absolute euros and in percentage.
+
+### Model Selection
+
+#### Evaluation Metrics
+
+First we define a function to evaluate models by AUC and accuracy.
+
 ```{r}
 cm <- function(dat, vars){
   
@@ -85,3 +117,74 @@ cm <- function(dat, vars){
   }
   return(cm_df)
 }
+```
+
+### Logistic Regression
+
+In logistic regression, we included all message related interaction terms to incorporate the fact that different customers act differently even to the same type of messages. Also, we included other interaction terms including income and frequency. 
+
+```{r}
+# split into training, testing and representative datasets, and log-transform income
+nptb <- pentathlon_nptb %>% 
+  filter(!is.na(training)) %>% 
+  mutate(income_ln = log(income+1)) # in case of zero incomes
+
+nptb_train <- nptb %>% 
+  filter(training == 1)
+
+nptb_test <- nptb %>% 
+  filter(training == 0)
+
+nptb_repr <- pentathlon_nptb %>% 
+  filter(representative == "1") %>% 
+  mutate(income_ln = log(income+1))
+
+# run logistic regression with message related interaction terms
+result <- logistic(
+  nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "education", "children", "freq_endurance", 
+    "freq_strength", "freq_water", "freq_team", "freq_backcountry", 
+    "freq_winter", "freq_racquet", "income_ln"
+  ), 
+  lev = "yes", 
+  int = c(
+    "message:age", "message:gender", 
+    "message:education", 
+    "message:children", "message:freq_endurance", 
+    "message:freq_strength", 
+    "message:freq_water", 
+    "message:freq_team", 
+    "message:freq_backcountry", 
+    "message:freq_winter", 
+    "message:freq_racquet", 
+    "message:income_ln", 
+    "freq_endurance:income_ln", 
+    "freq_strength:income_ln", 
+    "freq_water:income_ln", 
+    "freq_team:income_ln", 
+    "freq_backcountry:income_ln", 
+    "freq_winter:income_ln", 
+    "freq_racquet:income_ln"
+  )
+)
+summary(result)
+
+# prediction on 30k test data
+logit_pred <- predict(result, pred_data = nptb_test)
+```
+
+#### Neural Network 
+
+Also, we used single layer neural network to capture the interaction effects. In this step, we looped over node size from 1 to 10 and decay range from 0.1 to 0.8. Then we used the optimal model to run predictions on test dataset. 
+
+```{r}
+
+```
+
+#### Keras MLP
+```{r}
+
+```
+
