@@ -144,7 +144,6 @@ params <- arrange(params, desc(params$accuracy))
 saveRDS(params, "nn_tune.rds")
 ```
 
-Get the result
 
 ```{r} 
 nn_tune <-readRDS("nn_tune.rds")
@@ -344,6 +343,7 @@ readRDS("data/xgb_tune_caret.rds")
 We found the best nrounds is 30. 
 
 Up to now, we have got all best parameters for xgboost model we need. And we train the final model.
+
 ```{r eval = FALSE}
 params <- list(
   objective = "binary:logistic",

@@ -43,6 +43,7 @@ library(yardstick)
 library(ggplot2)
 library(gbm)
 library(ModelMetrics)
+library(xgboost)
 ```
 
 <style>
@@ -97,6 +98,7 @@ First we define a function to evaluate models by AUC and accuracy.
 ```{r}
 cm <- function(dat, vars){
   
+  dat <- na.omit(dat)
   cm_df <- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
   colnames(cm_df) <- c("var", "auc", "accuracy")
   
@@ -119,7 +121,7 @@ cm <- function(dat, vars){
 }
 ```
 
-### Logistic Regression
+#### Logistic Regression
 
 In logistic regression, we included all message related interaction terms to incorporate the fact that different customers act differently even to the same type of messages. Also, we included other interaction terms including income and frequency. 
 
@@ -177,14 +179,592 @@ logit_pred <- predict(result, pred_data = nptb_test)
 
 #### Neural Network 
 
-Also, we used single layer neural network to capture the interaction effects. In this step, we looped over node size from 1 to 10 and decay range from 0.1 to 0.8. Then we used the optimal model to run predictions on test dataset. 
+Also, we used single layer neural network to capture the interaction effects. In this step, we looped over node size from 1 to 10 and decay range from 0.1 to 1. Then we used the optimal model to run predictions on test dataset. 
 
 ```{r}
+## filter and sort the dataset
+nn_nptb_train <- pentathlon_nptb %>%
+  filter(training == 1) %>%
+  select(custid:representative)
+register("nn_nptb_train", "pentathlon_nptb")
+
+nn_nptb_test <- pentathlon_nptb %>%
+  filter(training == 0) %>%
+  select(custid:representative)
+register("nn_nptb_test", "pentathlon_nptb")
+```
+
+```{r eval = FALSE}
+## filter and sort the dataset
+pentathlon_nptb_train <- pentathlon_nptb %>%
+  filter(training == 1) %>%
+  select(custid:representative)
+register("pentathlon_nptb_train", "pentathlon_nptb")
+
+# dtab(pentathlon_nptb_train, dec = 2, nr = 100) %>% render()
+pentathlon_nptb_test <- pentathlon_nptb %>%
+  filter(training == 0) %>%
+  select(custid:representative)
+register("pentathlon_nptb_test", "pentathlon_nptb")
+
+## create vector storing paremeters. 
+size = seq(1,10,1)
+decay = seq(0.1,1,0.1)
+
+## create grid search matrix
+params <- expand.grid(size,decay)
+#params$auc <- NA
+colnames(params) <- c("size",'decay')
+
+auc <- c()
+accuracy <- c()
+for (i in 1:nrow(params)){
+ 
+  result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"), 
+  lev = "yes", 
+  size = params[i,1], 
+  decay = params[i,2], 
+  seed = 1234
+)
+  pred <- predict(result, pred_data = pentathlon_nptb_test)
+  name_ <- paste0('pred_nn',params[i,1],'_',params[i,2])
+  print(name_)
+  pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = name_)
+  
+  
+  
+  auc_ <- cm(pentathlon_nptb_test,name_)$auc
+  accuracy_ <- cm(pentathlon_nptb_test,name_)$accuracy
+  auc<- c(auc,auc_)
+  accuracy <-c(accuracy,accuracy_)
+}
+params$auc <- auc
+params$accuracy <- accuracy
+params <- arrange(params, desc(params$accuracy))
+saveRDS(params, "data/nn_tune.rds")
+```
+
+The best size is 7 and best decay is 0.8. We then predict based on this model.
+
+```{r} 
+nn_tune <-readRDS("data/nn_tune.rds")
+nn_tune %>% 
+  top_n(auc, n = 10)
+
+```
+
+```{r}
+nn_result <- nn(
+  nn_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"), 
+  lev = "yes", 
+  size = 7, 
+  decay = 0.1, 
+  seed = 1234
+)
+nn_pred <- predict(nn_result, pred_data = nn_nptb_test)
 
 ```
 
 #### Keras MLP
-```{r}
 
+In keras deep learning models, we tried 2 and 3 hidden layers and compared the prediction performance on test dataset and below are our results. The accuracy scores are both around 0.810 and the AUC scores around 0.886. 
+
+```{r eval = FALSE}
+nptb_keras <- pentathlon_nptb %>% 
+  filter(representative == 0) %>% 
+  select(-custid, -total_os, -endurance_os, -strength_os, -water_os,
+         -winter_os, -backcountry_os, -racquet_os, -team_os, -representative)
+
+# recipe for preprocessing
+nptb_keras_train <- nptb_keras %>% 
+  filter(training == 1) %>% 
+  select(-training )
+
+nptb_keras_test <- nptb_keras %>% 
+  filter(training == 0) %>% 
+  select(-training ) 
+
+rec_obj <- recipe(buyer ~., data = nptb_keras_train) %>% 
+  step_log(income + 1) %>% 
+  step_dummy(message,age,gender) %>% 
+  step_center(income,education,children,freq_endurance,freq_strength,freq_water,
+                freq_winter,freq_team,freq_backcountry,freq_racquet) %>% 
+  step_scale(income,education,children,freq_endurance,freq_strength,freq_water,
+                freq_winter,freq_team,freq_backcountry,freq_racquet) %>% 
+  prep(data = nptb_keras_train)
+
+Xtrain <- bake(rec_obj, new_data = nptb_keras_train) %>% select(-buyer)
+Xtest <- bake(rec_obj, new_data = nptb_keras_test) %>% select(-buyer)
+
+ytrain <- ifelse(nptb_keras_train$buyer == "yes",1,0)
+ytest <- ifelse(nptb_keras_test$buyer == "yes",1,0)
+
+model_keras <- keras_model_sequential()
+
+model_keras <- model_keras %>% 
+  layer_dense(units = 16, activation = "relu", input_shape = ncol(Xtrain)) %>% 
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 16, activation = "relu") %>% 
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+
+model_keras <- model_keras %>% 
+  compile(optimizer = "sgd",
+          loss = "binary_crossentropy",
+          metrics = c('accuracy'))
+
+history <- fit(model_keras, x = as.matrix(Xtrain), y = ytrain,
+               batch_size = 50, epochs = 45, validation_split = 0.2)
+
+plot(history)
+
+```
+
+```{r eval = FALSE}
+# try 3 layers and increase number of nodes
+model_keras2 <- keras_model_sequential()
+
+model_keras2 <- model_keras2 %>% 
+  layer_dense(units = 20, activation = "relu", input_shape = ncol(Xtrain)) %>% 
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 20, activation = "relu") %>% 
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 20, activation = "relu") %>% 
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+
+model_keras2 <- model_keras2 %>% 
+  compile(optimizer = "sgd",
+          loss = "binary_crossentropy",
+          metrics = c('accuracy'))
+
+history2 <- fit(model_keras2, x = as.matrix(Xtrain), y = ytrain,
+               batch_size = 60, epochs = 45, validation_split = 0.2)
+
+plot(history2)
+```
+
+```{r eval = FALSE}
+# evaluate accuracy on test dataset 
+
+keras1_pred <- predict_proba(model_keras, x = as.matrix(Xtest)) 
+keras2_pred <- predict_proba(model_keras2, x = as.matrix(Xtest)) 
+
+keras1_class <- predict_classes(model_keras, x = as.matrix(Xtest))
+keras2_class <- predict_classes(model_keras2, x = as.matrix(Xtest))
+
+estimates_keras <- tibble::tibble(
+  truth = as.factor(ytest) %>% fct_recode(yes = "1", no = "0"),
+  estimate1 = as.factor(keras1_class) %>% fct_recode(yes = "1", no = "0"),
+  estimate2 = as.factor(keras2_class) %>% fct_recode(yes = "1", no = "0"),
+  pred_probs1 = as.vector(keras1_pred),
+  pred_probs2 = as.vector(keras2_pred))
+
+saveRDS(estimates_keras, "estimates_keras.rds")
+
+```
+
+```{r}
+estimates_keras <- readRDS("data/estimates_keras.rds")
+
+options(yardstick.event_first = FALSE)
+estimates_keras %>% metrics(truth, estimate1)
+estimates_keras %>% metrics(truth, estimate2)
+
+estimates_keras %>% roc_auc(truth, pred_probs1)
+estimates_keras %>% roc_auc(truth, pred_probs2)
+
+```
+
+#### Gradient Boosting Machine
+
+In this part, we tuned GBM models 3 times and saved the optimal model from each round of tuning. In the end we choose the one with highest ROC and predict on test dataset. 
+
+```{r}
+train = pentathlon_nptb %>%
+  filter(training == 1)
+test = pentathlon_nptb %>%
+  filter(training == 0)
+
+## Get columns for gbm model
+train_gbm = train[c("buyer","message","age", "gender", "income", "education", "children", "freq_endurance", "freq_strength", "freq_water", "freq_team", "freq_backcountry", "freq_winter", "freq_racquet")]
+test_gbm = test[c("buyer","message","age", "gender", "income", "education", "children", "freq_endurance", "freq_strength", "freq_water", "freq_team", "freq_backcountry", "freq_winter", "freq_racquet")]
+```
+
+
+```{r eval=FALSE}
+# Using caret
+caretGrid <- expand.grid(interaction.depth = c(2,4,6), 
+                         n.trees = c(100,300),
+                         shrinkage = c(0.1,0.01),
+                         n.minobsinnode = c(20,40))
+trainControl <- trainControl(method="cv", number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+set.seed(123)
+gbm_caret <- train(buyer ~ ., 
+              data=train_gbm, 
+              distribution="bernoulli", 
+              method="gbm",
+              trControl=trainControl, verbose=FALSE,
+              tuneGrid=caretGrid, metric = "ROC")
+
+print(gbm_caret)
+gbm_caret$results
+gbm_caret$bestTune
+
+saveRDS(gbm_caret$bestTune, "data/gbm_best_tune_train1.rds")
+
+saveRDS(gbm_caret$results, "data/gbm_tune_train1.rds")
+```
+
+```{r}
+params1 <- readRDS("data/gbm_tune_train1.rds")
+params1 %>% 
+  arrange(desc(ROC)) %>% 
+  top_n(ROC, n = 10)
+
+best_tune1 <- readRDS("data/gbm_best_tune_train1.rds")
+best_tune1
+```
+
+
+Based on the performance in the previous trunk, we narrowed down hyperparameter ranges and tuned for the second time.
+
+```{r eval=FALSE}
+caretGrid2 <- expand.grid(interaction.depth = c(2,4,6), 
+                         n.trees = c(200,300,400),
+                         shrinkage = 0.1,
+                         n.minobsinnode = c(20,40))
+trainControl2 <- trainControl(method="cv", number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+set.seed(123)
+gbm_caret2 <- train(buyer ~ ., 
+              data=train_gbm, 
+              distribution="bernoulli", 
+              method="gbm",
+              trControl=trainControl2, verbose=FALSE,
+              tuneGrid=caretGrid2, metric = "ROC")
+
+print(gbm_caret2)
+gbm_caret2$results
+
+saveRDS(gbm_caret2$results, "data/gbm_tune_train2.rds")
+saveRDS(gbm_caret2$bestTune, "data/gbm_best_tune_train2.rds")
+```
+
+```{r}
+params2 <- readRDS("data/gbm_tune_train2.rds")
+params2 %>% 
+  arrange(desc(ROC)) %>% 
+  top_n(ROC, n = 10)
+
+best_tune2 <- readRDS("data/gbm_best_tune_train2.rds")
+best_tune2
+```
+
+Tune hyperparameters for the third time and below are our results. 
+
+```{r eval=FALSE}
+caretGrid3 <- expand.grid(interaction.depth = 6, 
+                         n.trees = c(300,400),
+                         shrinkage = c(0.12,0.1,0.08),
+                         n.minobsinnode = c(20,30,40))
+trainControl3 <- trainControl(method="cv", number=6, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+set.seed(123)
+gbm_caret3 <- train(buyer ~ ., 
+              data=train_gbm, 
+              distribution="bernoulli", 
+              method="gbm",
+              trControl=trainControl3, verbose=FALSE,
+              tuneGrid=caretGrid3, metric = "ROC")
+#bag.fraction=0.75
+print(gbm_caret3)
+gbm_caret3$results
+
+saveRDS(gbm_caret3$results, "data/gbm_tune_train3.rds")
+saveRDS(gbm_caret3$bestTune, "data/gbm_best_tune_train3.rds")
+```
+
+```{r}
+params3 <- readRDS("data/gbm_tune_train3.rds")
+params3 %>% 
+  arrange(desc(ROC)) %>% 
+  top_n(ROC, n = 10)
+
+best_tune3 <- readRDS("data/gbm_best_tune_train3.rds")
+best_tune3
+```
+
+Get the AUC score and accuracy of the previous three models.
+
+```{r eval=FALSE}
+# run predictions on test data based on the 3 optimal models from above
+
+prediction1 <- predict(gbm_caret, newdata=test_gbm, type="prob", n.trees = 300)
+test_gbm$p_gbm_caret = prediction$yes
+
+prediction2 <- predict(gbm_caret2, newdata=test_gbm, type="prob", n.trees = 300)
+test_gbm$p_gbm_caret2 = prediction2$yes
+
+prediction3 <- predict(gbm_caret3, newdata=test_gbm, type="prob", n.trees = 400)
+test_gbm$p_gbm_caret3 = prediction3$yes
+
+vals = c('p_gbm_caret','p_gbm_caret2','p_gbm_caret3')
+cm(test_gbm,vals)
+saveRDS(cm(test_gbm,vals), "gbm_tune_test_result.rds")
+```
+
+As we can see, the model with the highest AUC score is the third optimal model with n.trees = 400, interaction.depth = 6, shrinkage = 0.08 and n.minobsinnode = 30.
+
+```{r}
+gbm_tune_results <- readRDS("data/gbm_tune_test_result.rds")
+gbm_tune_results
+
+best_tune3 <- readRDS("data/gbm_best_tune_train3.rds")
+best_tune3
+
+train_gbm$buyer <- ifelse(train_gbm$buyer  == "yes", 1, 0)
+test_gbm$buyer <- ifelse(test_gbm$buyer  == "yes", 1, 0)
+
+best_gbm <- gbm(formula = buyer ~ . , 
+                  data = train_gbm, 
+                  distribution = "bernoulli", 
+                  interaction.depth = best_tune3[1,2],
+                  shrinkage = best_tune3[1,3],
+                  n.trees = best_tune3[1,1],
+                  n.minobsinnode = best_tune3[1,4])
+
+gbm_pred <- predict(best_gbm, newdata = test_gbm, type = "response", n.trees = best_tune3[1,1])
+
+```
+
+#### XGBoost
+
+```{r}
+# data pre-processing
+pentathlon_nptb_xgb <- pentathlon_nptb
+
+temp <- dummyVars(~message +age ,data = pentathlon_nptb_xgb)
+pred <- predict(temp, newdata = pentathlon_nptb_xgb)
+
+# data specific for caret hyper-parameter tuning
+
+pentathlon_nptb_xgb <- pentathlon_nptb_xgb %>%
+  cbind(pred) %>%
+  select(-c('custid','message','age','total_os','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.< 30')) %>%
+  mutate(buyer = as.factor(buyer),
+         gender =ifelse(gender == 'M',1,0))
+
+pentathlon_nptb_xgb_train <- pentathlon_nptb_xgb %>%
+  filter(training == 1) %>%
+  select(-training)
+  
+pentathlon_nptb_xgb_test <- pentathlon_nptb_xgb %>%
+  filter(training == 0) %>%
+  select(-training)
+
+#### Create xgboost-specific DMatrix
+
+X_train = pentathlon_nptb_xgb_train %>% select(-buyer)
+y_train = pentathlon_nptb_xgb_train$buyer
+
+X_test = pentathlon_nptb_xgb_test %>% select(-buyer)
+y_test =pentathlon_nptb_xgb_test$buyer
+
+# data specific for manual hyper-parameter tuning
+pentathlon_nptb_xgb_train2 <- pentathlon_nptb_xgb_train %>%
+  mutate(buyer = ifelse(buyer == 'yes',1,0))
+
+pentathlon_nptb_xgb_test2 <- pentathlon_nptb_xgb_test %>%
+  mutate(buyer = ifelse(buyer == 'yes',1,0))
+
+
+X_train2 = model.matrix(buyer~.,pentathlon_nptb_xgb_train2)
+y_train2 = pentathlon_nptb_xgb_train2$buyer
+
+X_test2 = model.matrix(buyer~.,pentathlon_nptb_xgb_test2)
+y_test2 = pentathlon_nptb_xgb_test2$buyer
+
+dtest <- xgb.DMatrix(data = X_test2, label = y_test2)
+dtrain <- xgb.DMatrix(data = X_train2, label = y_train2)
+
+```
+
+First, we generate rough parameters to test using manual grid search. The tuning result is as following.
+
+```{r eval = FALSE}
+## create vector storing paremeters. 
+nrounds = c(20,30)
+objective = "binary:logistic"
+eta <- c(0.2,0.3)
+max_depth <- c(6,7,8)
+## create grid search matrix
+params <- expand.grid(nrounds,objective,eta,max_depth)
+#params$auc <- NA
+colnames(params) <- c("nrounds",'objective', "eta",'max_depth')
+
+
+AUC <- c()
+train_auc <-c()
+
+for (i in 1:nrow(params)){
+ 
+  xgb <- xgb.train(
+    nrounds = params[i,1],
+    params = as.list(params[i,-1]),
+    data = dtrain,
+    watchlist = list(val = dtest, train = dtrain),
+    print_every_n = 10,
+    eval_metric = "auc")
+  
+  auc_ <- tail(xgb$evaluation_log$val_auc,1)
+  train_auc_ <- tail(xgb$evaluation_log$train_auc,1)
+  AUC<- c(AUC,auc_)
+  train_auc <-c(train_auc,train_auc_)
+}
+
+params$auc <- AUC
+params$train_auc <- train_auc
+
+saveRDS(params, "data/xgb_tune_manual.rds")
+
+```
+
+```{r}
+xgb_tune <-readRDS("data/xgb_tune_manual.rds")
+xgb_tune <- arrange(xgb_tune, desc(xgb_tune$auc))
+xgb_tune
+```
+
+As we can see from the table, almost all models perform better when nrounds is 30 compared to 20,so we conclude that the best nrounds may be larger than 30 and further tuning is needed. The best max_depth is 7 and best eta is 0.2.
+
+We then use the preliminary result for further and more accurate training using caret package.
+
+```{r eval = FALSE}
+
+auc <- function(data, lev = NULL, model = NULL) {
+  c(auc = radiant.model::auc(data$yes, data$obs, 'yes'))
+}
+
+
+xgb_grid_1 = expand.grid(
+  nrounds = c(30,50,100),
+  eta = c(0.2),
+  max_depth = c(7),
+  gamma = 1,
+  colsample_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  
+)
+
+xgb_trcontrol_1 = trainControl(
+  method = "cv",
+  number = 2,
+ 
+  classProbs = TRUE,
+  #returnData = TRUE,
+  #returnResamp = "all",                                                                               # set to TRUE for AUC to be computed
+  #search = 'grid',
+  summaryFunction = auc,
+  verboseIter = TRUE
+  #allowParallel = FALSE
+)
+
+xgb_train_1 = train(
+  x = X_train,
+  y = y_train,
+  trControl = xgb_trcontrol_1,
+  tuneGrid = xgb_grid_1,
+  metric = "auc",
+  method = "xgbTree"
+)
+
+xgb_table <- xgb_train_1$results
+saveRDS(xgb_table, "data/xgb_tune_caret.rds")
+```
+
+We found the best nrounds is 30. Up to now, we have got all best parameters for xgboost model we need. And we train the final model.
+
+```{r}
+xgb_tune_caret <- readRDS("data/xgb_tune_caret.rds")
+xgb_tune_caret
+```
+
+The final auc of the best xgboost model is `r round(AUC, 4)` and then we run predictions on test dataset. 
+
+```{r}
+params <- list(
+  objective = "binary:logistic",
+  eta = 0.2,
+  max_depth = 7,
+  colsamply_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  #gamma = 10
+)
+
+set.seed(123)
+xgb <- xgb.train(
+    nrounds = 30,
+    params = params,
+    data = dtrain,
+    watchlist = list(val = dtest, train = dtrain),
+    print_every_n = 10,
+    eval_metric = "auc")
+
+xgb_pred <- predict(xgb, dtest)
+
+AUC <- tail(xgb$evaluation_log$val_auc,1)
+AUC
+```
+
+#### Model Comparisons
+
+We compared model performance in terms of AUC and accuracy. As we can see, Neural Network has the best performance and we'll use this model for our further analysis. 
+
+```{r}
+eval_preds <- cbind(logit_pred$Prediction, nn_pred$Prediction, xgb_pred, gbm_pred, estimates_keras$pred_probs2) %>% as.data.frame()
+
+colnames(eval_preds) <- c("logit", "nn", "xgb", "gbm", "keras")
+
+eval_preds$buyer <- nptb_test$buyer
+
+vars <- c("logit", "nn", "xgb", "gbm", "keras")
+
+cm_df <- cm(eval_preds, vars)
+cm_df[2:3] <- lapply(cm_df[2:3], as.numeric)
+cm_df
+
+```
+
+### Probability prediction on representative dataset
+
+```{r}
+# define a function to adjust prob
+adjust_prob <- function(prob){
+  prob_adj <- prob/(prob + (1 - prob) * 0.99 / 0.01)
+  prob_adj
+}
+```
+
+```{r}
+nn_nptb_test <- pentathlon_nptb %>%
+  filter(training == 0) %>%
+  select(custid:representative)
+register("nn_nptb_test", "pentathlon_nptb")
 ```
 
