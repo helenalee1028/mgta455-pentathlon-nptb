@@ -450,7 +450,35 @@ result <- nn(
 summary(result, prn = TRUE)
 
 pred <- predict(result, pred_data = pentathlon_nptb_rep)
-#print(pred, n = 10)
 pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'endurance'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_endu")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'strength'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_stren")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'water'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_water")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'team'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_team")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'backcountry'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_back")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'winter'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_winter")
+
+
+pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'racquet'")
+pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_racquet")
+```
 
 ```
