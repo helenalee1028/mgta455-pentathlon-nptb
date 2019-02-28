@@ -3,6 +3,8 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+
+## Load Data
 ```{r}
 ## Loading the data from Dropbox/MGTA455-2019/data/
 pentathlon_nptb <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2019/data/pentathlon_nptb.rds"))
@@ -15,6 +17,7 @@ pentathlon_nptb_train <- pentathlon_nptb %>%
   filter(training == 1) %>%
   select(custid:representative)
 register("pentathlon_nptb_train", "pentathlon_nptb")
+
 # dtab(pentathlon_nptb_train, dec = 2, nr = 100) %>% render()
 pentathlon_nptb_test <- pentathlon_nptb %>%
   filter(training == 0) %>%
@@ -22,8 +25,36 @@ pentathlon_nptb_test <- pentathlon_nptb %>%
 register("pentathlon_nptb_test", "pentathlon_nptb")
 ```
 
-Logistic regression with interaction：
-with all best 19 interactions
+
+## Create a function to calculate auc and accuracy.
+```{r}
+cm <- function(dat, vars){
+  
+  cm_df <- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
+  colnames(cm_df) <- c("var", "auc", "accuracy")
+  
+  for (i in 1:length(vars)){
+    
+    var <- vars[i]
+    probs <- pull(dat, !!var)
+    resp <- pull(dat, "buyer")
+    
+    predict <- ifelse(pull(dat, !!var) > 0.5, "TRUE", "FALSE") # predict whether a customer will buy 
+    
+    accuracy <- (sum(resp == "yes" & predict == "TRUE") + sum(resp == "no" & predict == "FALSE"))/nrow(dat)
+    
+    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
+    
+    cm_vec <- c(var, auc, accuracy)
+    cm_df[i,] <- cm_vec
+  }
+  return(cm_df)
+}
+```
+
+## Logistic regression with interaction
+
+Logistic 1 : With all best 19 interactions
 
 ```{r}
 result <- logistic(
@@ -56,43 +87,19 @@ summary(result)
 pred <- predict(result, pred_data = pentathlon_nptb_test)
 pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = "pred_logit")
 ```
-
-create a function to alculate auc and accuracy.
-```{r}
-cm <- function(dat, vars){
-  
-  cm_df <- as.data.frame(matrix(NA, ncol = 3, nrow = length(vars)))
-  colnames(cm_df) <- c("var", "auc", "accuracy")
-  
-  for (i in 1:length(vars)){
-    
-    var <- vars[i]
-    probs <- pull(dat, !!var)
-    resp <- pull(dat, "buyer")
-    
-    predict <- ifelse(pull(dat, !!var) > 0.5, "TRUE", "FALSE") # predict whether a customer will buy 
-    
-    accuracy <- (sum(resp == "yes" & predict == "TRUE") + sum(resp == "no" & predict == "FALSE"))/nrow(dat)
-    
-    auc <- ModelMetrics::auc(ifelse(resp=="yes",1,0), probs)
-    
-    cm_vec <- c(var, auc, accuracy)
-    cm_df[i,] <- cm_vec
-  }
-  return(cm_df)
-}
-```
-
+Show the evaluation of logistic model.
 
 ```{r}
 cm(pentathlon_nptb_test,'pred_logit')
 ```
-Grid search for neural network.
+The auc for the best logistic model is 0.8838.
 
-Neural network nn=2,3,4,5,6,7,8,9,10
-decay = 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9
+## Neural Network.
 
-Grid search
+We create grid search for neural network. The parameters we loop through are as follow.
+Neural network size = 1,2,3,4,5,6,7,8,9,10
+decay = 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1
+
 ```{r eval = FALSE}
 ## create vector storing paremeters. 
 size = seq(1,10,1)
@@ -137,17 +144,36 @@ params <- arrange(params, desc(params$accuracy))
 saveRDS(params, "nn_tune.rds")
 ```
 
+Get the result
 
-
-```{r}
+```{r} 
 nn_tune <-readRDS("nn_tune.rds")
-nn_tune
+head(nn_tune)
+
 ```
 
+The best size is 9 and best decay is 0.8. We then predict based on this model.
 
-xgboost model with caret
+```{r}
+result <- nn(
+  pentathlon_nptb_train, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"), 
+  lev = "yes", 
+  size = 9, 
+  decay = 0.8, 
+  seed = 1234
+)
+pred <- predict(result, pred_data = pentathlon_nptb_test)
+pentathlon_nptb_test <- store(pentathlon_nptb_test, pred, name = 'pred_nn')
+```
 
-Create dataframe needed.
+## xgboost 
+
+Create dataframe needed for xgboost training.
 
 ```{r}
 library(caret)
@@ -187,14 +213,8 @@ y_test =pentathlon_nptb_xgb_test$buyer
 #dtrain <- xgb.DMatrix(data = X_train, label = y_train)
 ```
 
-A very general parameter search.
 
-
-
-
-
-
-First, we generate rough parameters to test.
+First, we generate rough parameters to test using manual grid search.
 
 ```{r}
 pentathlon_nptb_xgb_train2 <- pentathlon_nptb_xgb_train %>%
@@ -213,11 +233,11 @@ X_test2 = model.matrix(buyer~.,pentathlon_nptb_xgb_test2)
 y_test2 = pentathlon_nptb_xgb_test2$buyer
 
 
-
 dtest <- xgb.DMatrix(data = X_test2, label = y_test2)
 dtrain <- xgb.DMatrix(data = X_train2, label = y_train2)
 ```
 
+First tune the hyperparameters for the model.
 
 ```{r eval = FALSE}
 ## create vector storing paremeters. 
@@ -252,6 +272,7 @@ for (i in 1:nrow(params)){
 
 params$auc <- AUC
 params$train_auc <- train_auc
+
 saveRDS(params, "xgb_tune_manual.rds")
 
 #params <- arrange(params, desc(params$auc))
@@ -262,14 +283,15 @@ The tuning result is as follows.
 
 ```{r}
 xgb_tune <-readRDS("xgb_tune_manual.rds")
-xgb_tune.head()
+xgb_tune <- arrange(xgb_tune, desc(xgb_tune$auc))
+xgb_tune
 ```
 
-As we can see from the table, when nrounds increase from 10 t0 30, auc increases, so we need further tuning to get the best nrounds. The best max_depth is 6 and best eta is 0.2
+As we can see from the table, almost all models perform better when nrounds is 30 compared to 20,so we make the prediction that the best nrounds may be larger than 30 and further tuning is needed. The best max_depth is 7 and best eta is 0.2
 
 We then use the elementary result for further and more accurate training using caret package.
 
-```{r}
+```{r eval = FALSE}
 
 auc <- function(data, lev = NULL, model = NULL) {
   c(auc = radiant.model::auc(data$yes, data$obs, 'yes'))
@@ -279,7 +301,7 @@ auc <- function(data, lev = NULL, model = NULL) {
 xgb_grid_1 = expand.grid(
   nrounds = c(30,50,100),
   eta = c(0.2),
-  max_depth = c(6),
+  max_depth = c(7),
   gamma = 1,
   colsample_bytree = 0.8,
   min_child_weight = 10,
@@ -309,22 +331,24 @@ xgb_train_1 = train(
   method = "xgbTree"
 )
 
+xgb_table <- xgb_train_1$results
+saveRDS(xgb_table, "data/xgb_tune_caret.rds")
 ```
 
 
 ```{r}
-xgb_train_1$results
+readRDS("data/xgb_tune_caret.rds")
 
 ```
 
-In this tuning, we specifically tune nrounds. We found the best nrounds is 30. 
+We found the best nrounds is 30. 
 
-Up to now, we have got all best parameters we need. And we train the final model.
+Up to now, we have got all best parameters for xgboost model we need. And we train the final model.
 ```{r eval = FALSE}
 params <- list(
   objective = "binary:logistic",
   eta = 0.2,
-  max_depth = 6,
+  max_depth = 7,
   colsamply_bytree = 0.8,
   min_child_weight = 10,
   subsample = 0.8
@@ -350,4 +374,4 @@ saveRDS(pred, "data/xgb_best.rds")
 AUC
 ```
 
-The final auc of the best xgboost model is 0.8868 and the prediction is stored in column：pred_xgb in test set.
+The final auc of the best xgboost model is 0.8871 and the prediction is stored in column：pred_xgb in test set.
