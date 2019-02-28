@@ -160,7 +160,7 @@ pred <- predict(temp, newdata = pentathlon_nptb_xgb)
 
 pentathlon_nptb_xgb <- pentathlon_nptb_xgb %>%
   cbind(pred) %>%
-  select(-c('custid','message','age','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.< 30')) %>%
+  select(-c('custid','message','age','total_os','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os','representative','message.endurance','age.< 30')) %>%
   mutate(buyer = as.factor(buyer),
          gender =ifelse(gender == 'M',1,0))
 ```
@@ -189,6 +189,86 @@ y_test =pentathlon_nptb_xgb_test$buyer
 
 A very general parameter search.
 
+
+
+
+
+
+First, we generate rough parameters to test.
+
+```{r}
+pentathlon_nptb_xgb_train2 <- pentathlon_nptb_xgb_train %>%
+  mutate(buyer = ifelse(buyer == 'yes',1,0))
+
+pentathlon_nptb_xgb_test2 <- pentathlon_nptb_xgb_test %>%
+  mutate(buyer = ifelse(buyer == 'yes',1,0))
+
+
+X_train2 = model.matrix(buyer~.,pentathlon_nptb_xgb_train2)
+#X_train2 <- X_train2[,-2] 
+y_train2 = pentathlon_nptb_xgb_train2$buyer
+
+X_test2 = model.matrix(buyer~.,pentathlon_nptb_xgb_test2)
+#X_test2 <- X_test2[, -2]
+y_test2 = pentathlon_nptb_xgb_test2$buyer
+
+
+
+dtest <- xgb.DMatrix(data = X_test2, label = y_test2)
+dtrain <- xgb.DMatrix(data = X_train2, label = y_train2)
+```
+
+
+```{r eval = FALSE}
+## create vector storing paremeters. 
+nrounds = c(20,30)
+objective = "binary:logistic"
+eta <- c(0.2,0.3)
+max_depth <- c(6,7,8)
+## create grid search matrix
+params <- expand.grid(nrounds,objective,eta,max_depth)
+#params$auc <- NA
+colnames(params) <- c("nrounds",'objective', "eta",'max_depth')
+
+
+AUC <- c()
+train_auc <-c()
+
+for (i in 1:nrow(params)){
+ 
+  xgb <- xgb.train(
+    nrounds = params[i,1],
+    params = as.list(params[i,-1]),
+    data = dtrain,
+    watchlist = list(val = dtest, train = dtrain),
+    print_every_n = 10,
+    eval_metric = "auc")
+  
+  auc_ <- tail(xgb$evaluation_log$val_auc,1)
+  train_auc_ <- tail(xgb$evaluation_log$train_auc,1)
+  AUC<- c(AUC,auc_)
+  train_auc <-c(train_auc,train_auc_)
+}
+
+params$auc <- AUC
+params$train_auc <- train_auc
+saveRDS(params, "xgb_tune_manual.rds")
+
+#params <- arrange(params, desc(params$auc))
+#saveRDS(params, "xgb_tune_manual.rds")
+```
+
+The tuning result is as follows.
+
+```{r}
+xgb_tune <-readRDS("xgb_tune_manual.rds")
+xgb_tune.head()
+```
+
+As we can see from the table, when nrounds increase from 10 t0 30, auc increases, so we need further tuning to get the best nrounds. The best max_depth is 6 and best eta is 0.2
+
+We then use the elementary result for further and more accurate training using caret package.
+
 ```{r}
 
 auc <- function(data, lev = NULL, model = NULL) {
@@ -197,9 +277,9 @@ auc <- function(data, lev = NULL, model = NULL) {
 
 
 xgb_grid_1 = expand.grid(
-  nrounds = c(20),
-  eta = c(0.3),
-  max_depth = c(2, 4),
+  nrounds = c(30,50,100),
+  eta = c(0.2),
+  max_depth = c(6),
   gamma = 1,
   colsample_bytree = 0.8,
   min_child_weight = 10,
@@ -210,12 +290,13 @@ xgb_grid_1 = expand.grid(
 xgb_trcontrol_1 = trainControl(
   method = "cv",
   number = 2,
-  verboseIter = TRUE,
+ 
   classProbs = TRUE,
   #returnData = TRUE,
   #returnResamp = "all",                                                                               # set to TRUE for AUC to be computed
   #search = 'grid',
-  summaryFunction = auc
+  summaryFunction = auc,
+  verboseIter = TRUE
   #allowParallel = FALSE
 )
 
@@ -230,14 +311,43 @@ xgb_train_1 = train(
 
 ```
 
-```{r}
 
+```{r}
 xgb_train_1$results
 
 ```
 
-```{r}
-cl <- makeCluster(10,type = 'SOCK')
-registerDoSNOW(cl)
+In this tuning, we specifically tune nrounds. We found the best nrounds is 30. 
+
+Up to now, we have got all best parameters we need. And we train the final model.
+```{r eval = FALSE}
+params <- list(
+  objective = "binary:logistic",
+  eta = 0.2,
+  max_depth = 6,
+  colsamply_bytree = 0.8,
+  min_child_weight = 10,
+  subsample = 0.8
+  #gamma = 10
+)
+
+set.seed(123)
+xgb <- xgb.train(
+    nrounds = 30,
+    params = params,
+    data = dtrain,
+    watchlist = list(val = dtest, train = dtrain),
+    print_every_n = 10,
+    eval_metric = "auc")
+
+
+pred = predict(xgb, dtest)
+pentathlon_nptb_test$`pred_xgb` <- pred
+#model_eval(intuit75k_test, 'pred_xgb')
+AUC <- tail(xgb$evaluation_log$val_auc,1)
+
+saveRDS(pred, "data/xgb_best.rds")
+AUC
 ```
 
+The final auc of the best xgboost model is 0.8868 and the prediction is stored in column：pred_xgb in test set.
