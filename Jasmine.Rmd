@@ -378,16 +378,17 @@ The final auc of the best xgboost model is 0.8871 and the prediction is stored i
 
 
 ```{r}
-A <- pentathlon_nptb_train %>%
+A <- pentathlon_nptb_total %>%
   select(c('buyer','total_os','message','endurance_os','strength_os','water_os','team_os','backcountry_os','winter_os','racquet_os'))
 
-A <- A %>%
+A <- pentathlon_nptb_total %>%
   group_by(message) %>%
-  summarize(count = n(),
-        sum_ = sum(total_os),
-        no_buy = sum(buyer == 'yes'),
-        mean = sum(total_os) / sum(buyer == 'yes'))
+  summarize(mean = sum(total_os) / sum(buyer == 'yes')) %>%
+  mutate(message = as.character(message))
 
+
+        #sum_ = sum(total_os),
+        #no_buy = sum(buyer == 'yes'),
 ```
 
 nn with size = 7, decay = 0.1
@@ -480,5 +481,129 @@ pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_winter"
 pred <- predict(result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'racquet'")
 pentathlon_nptb_rep <- store(pentathlon_nptb_rep, pred, name = "pred_nn7_racquet")
 ```
+## Q1
+
+```{r}
+pentathlon_nptb_rep <- pentathlon_nptb_rep %>%
+  mutate(pred_adj = pred_nn7 / (pred_nn7 + (1-pred_nn7) * (1-0.01) / 0.01),
+         pred_adj_endu =pred_nn7_endu / (pred_nn7_endu + (1-pred_nn7_endu) * (1-0.01) / 0.01),
+         pred_adj_stren =pred_nn7_stren / (pred_nn7_stren + (1-pred_nn7_stren) * (1-0.01) / 0.01),
+         pred_adj_water =pred_nn7_water / (pred_nn7_water + (1-pred_nn7_water) * (1-0.01) / 0.01),
+         pred_adj_team =pred_nn7_team/ (pred_nn7_team + (1-pred_nn7_team) * (1-0.01) / 0.01),
+         pred_adj_back =pred_nn7_back / (pred_nn7_back + (1-pred_nn7_back) * (1-0.01) / 0.01),
+         pred_adj_winter =pred_nn7_winter/ (pred_nn7_winter + (1-pred_nn7_winter) * (1-0.01) / 0.01),
+         pred_adj_racquet =pred_nn7_racquet / (pred_nn7_racquet + (1-pred_nn7_racquet) * (1-0.01) / 0.01),) %>%
+  mutate(message_to = c('endurance','strength','water','team','backcountry','winter','racquet')[which.pmax(pred_adj_endu, pred_adj_stren, pred_adj_water, pred_adj_team, pred_adj_back,pred_adj_winter, pred_adj_racquet)])
 
 ```
+
+
+## Q2 
+```{r}
+temp <- pentathlon_nptb_rep %>%
+  group_by(message_to) %>%
+  summarize(count = n(),
+            percentage = count / nrow(pentathlon_nptb_rep)) %>%
+  arrange(desc(percentage))
+temp
+```
+
+
+## Q3
+```{r}
+expected = as.vector(A$mean)
+## endurance , strength, water,team,backcountry,winter ,racquet
+pentathlon_nptb_rep <- pentathlon_nptb_rep %>%
+  mutate(exp_endu = pred_adj_endu * expected[1] * 0.4,
+         exp_stren = pred_adj_stren * expected[2]* 0.4,
+         exp_water = pred_adj_water * expected[3]* 0.4,
+         exp_team = pred_adj_team * expected[4]* 0.4,
+         exp_back = pred_adj_back * expected[5]* 0.4,
+         exp_winter = pred_adj_winter * expected[6]* 0.4,
+         exp_racquet = pred_adj_racquet * expected[7]* 0.4
+         ) %>%
+  mutate(message_to_exp = c('endurance','strength','water','team','backcountry','winter','racquet')[which.pmax(exp_endu, exp_stren, exp_water, exp_team, exp_back,exp_winter, exp_racquet)])
+
+```
+
+
+## Q4
+```{r}
+
+temp <- pentathlon_nptb_rep %>%
+  group_by(message_to_exp) %>%
+  summarize(count = n(),
+            percentage = count / nrow(pentathlon_nptb_rep)) %>%
+  arrange(desc(percentage))
+temp
+
+```
+
+## Q5
+
+```{r}
+A <- A %>%
+  mutate(message = as.character(message))
+
+
+pentathlon_nptb_rep <- pentathlon_nptb_rep %>%
+  mutate(max_pro = pmax(exp_endu,exp_stren,exp_water,exp_team,exp_back,exp_winter,exp_racquet))
+
+
+mean(pentathlon_nptb_rep$max_pro)
+```
+
+
+## Q6
+
+```{r}
+mean(pentathlon_nptb_rep$exp_endu)
+mean(pentathlon_nptb_rep$exp_stren)
+mean(pentathlon_nptb_rep$exp_water)
+mean(pentathlon_nptb_rep$exp_team)
+mean(pentathlon_nptb_rep$exp_back)
+mean(pentathlon_nptb_rep$exp_winter)
+mean(pentathlon_nptb_rep$exp_racquet)
+```
+
+
+## Q7
+
+
+```{r}
+pentathlon_nptb_rep <- pentathlon_nptb_rep %>%
+  left_join(A, by=c("message"="message"))
+
+
+```
+
+
+```{r}
+pentathlon_nptb_rep <- pentathlon_nptb_rep %>%
+  mutate(random = pred_adj*mean.x*0.4)
+
+mean(pentathlon_nptb_rep$random)
+```
+
+
+## Q8
+
+```{r}
+(mean(pentathlon_nptb_rep$max_pro)-mean(pentathlon_nptb_rep$random)) * 5000000 
+
+
+((mean(pentathlon_nptb_rep$max_pro)-mean(pentathlon_nptb_rep$random)) * 5000000) /(mean(pentathlon_nptb_rep$random)*5000000)
+```
+
+
+## New Proposal
+
+* weakness 1 : The result may be incidental and not able to get updated information 
+
+Our prediction is only based on customers' responces to last one email, the result may occur by chance and may not be able to represent the real preference of that customer. If further analytics is only based on their responces of top 2 message type, we may never get there responces to other messages. Our strategy towards them will be very biased and out of date.
+
+* Improvement
+
+For first two weeks, randomly send them emails of 7 kinds. During second week, we analyze their responces from first week and forecast two messages that yield the highest expected profit. For the following two weeks, those 2 departments each control 1/2 of messages. In this way, we can capture their real time preference for each month and send them targeted messages to generate more profit in the second half of that month. 
+
+and 
