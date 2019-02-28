@@ -753,6 +753,8 @@ cm_df
 
 ### Probability prediction on representative dataset
 
+First we run our optimal neural network model on the entire training dataset (non-representative data) and then use the model to predict prediction on representative data. 
+
 ```{r}
 # define a function to adjust prob
 adjust_prob <- function(prob){
@@ -762,9 +764,191 @@ adjust_prob <- function(prob){
 ```
 
 ```{r}
-nn_nptb_test <- pentathlon_nptb %>%
-  filter(training == 0) %>%
+## get representative dataset
+pentathlon_nptb_rep <- pentathlon_nptb %>%
+  filter(representative == 1) %>%
   select(custid:representative)
-register("nn_nptb_test", "pentathlon_nptb")
+register("pentathlon_nptb_rep", "pentathlon_nptb")
+
+## get entire training data
+pentathlon_nptb_total <- pentathlon_nptb %>%
+  filter(representative == 0) %>%
+  select(custid:representative)
+register("pentathlon_nptb_total", "pentathlon_nptb")
+
 ```
+
+```{r}
+nn_result <- nn(
+  pentathlon_nptb_total, 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  size = 7, 
+  decay = 0.1, 
+  seed = 1234
+)
+
+random_pred <- predict(nn_result, pred_data = pentathlon_nptb_rep)
+pred_rac <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'racquet'")
+pred_end <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'endurance'")
+pred_water <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'water'")
+pred_winter <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'winter'")
+pred_bc <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'backcountry'")
+pred_strg <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'strength'")
+pred_team <- predict(nn_result, pred_data = pentathlon_nptb_rep, pred_cmd = "message = 'team'")
+
+
+```
+
+#### Question 1
+
+We adjusted predicted probablities to reflect the fact that true response rate is around 1% on average. For each customer, the target message type is the one that has the highest probability. 
+
+```{r}
+# combine 7 message-specific predictions to a single dataframe
+combined_probs <- lapply(ls(pattern = "^pred_"), get)
+nn_preds <- sapply(combined_probs, '[[', "Prediction") %>% as.data.frame()
+nn_preds[] <- lapply(nn_preds, adjust_prob)
+colnames(nn_preds) <- ls(pattern = "^pred_")
+
+# decide which message to send based on predicted probabilities
+message_types <- c("backcountry", "endurance", "racquet", "strength", "team", "water", "winter")
+
+to_send_prob <- do.call(pmax,nn_preds)
+to_send_msg <- do.call(which.pmax, nn_preds) %>% as.numeric()
+
+nn_preds$to_send_prob <- to_send_prob
+nn_preds$to_send_msg <- message_types[to_send_msg]
+
+nn_preds$custid <- pentathlon_nptb_rep$custid
+
+nn_preds %>% 
+  select(custid, to_send_prob, to_send_msg) %>% 
+  head(10)
+```
+
+#### Question 2
+
+```{r}
+nn_preds %>% 
+  group_by(to_send_msg) %>% 
+  summarise(perc = n()/nrow(nn_preds)) %>% 
+  arrange(desc(perc))
+```
+
+
+#### Question 3
+
+```{r}
+end_os <- pentathlon_nptb_total %>% 
+  filter(message== "endurance" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+  
+strength_os <- pentathlon_nptb_total %>% 
+  filter(message== "strength" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+bc_os <- pentathlon_nptb_total %>% 
+  filter(message== "backcountry" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+rac_os <- pentathlon_nptb_total %>% 
+  filter(message== "racquet" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+winter_os <- pentathlon_nptb_total %>% 
+  filter(message== "winter" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+water_os <- pentathlon_nptb_total %>% 
+  filter(message== "water" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+team_os <- pentathlon_nptb_total %>% 
+  filter(message== "team" & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+random_os <- pentathlon_nptb_total %>% 
+  filter(!is.na(training) & total_os != 0) %>% 
+  summarise(avg = mean(total_os)) %>% 
+  pull()
+
+# get expected profits
+nn_preds$exp_bc <- nn_preds$pred_bc * bc_os * 0.4
+nn_preds$exp_end <- nn_preds$pred_end * end_os * 0.4
+nn_preds$exp_rac <- nn_preds$pred_rac * rac_os * 0.4
+nn_preds$exp_strg <- nn_preds$pred_strg * strength_os * 0.4
+nn_preds$exp_team <- nn_preds$pred_team * team_os * 0.4
+nn_preds$exp_water <- nn_preds$pred_water * water_os * 0.4
+nn_preds$exp_winter <- nn_preds$pred_winter * winter_os * 0.4
+
+to_send_exp <- do.call(pmax, nn_preds[, 11:17])
+to_send_exp_msg <- do.call(which.pmax, nn_preds[, 11:17]) %>% as.numeric()
+
+nn_preds$to_send_ep <- to_send_exp
+nn_preds$to_send_ep_msg <- message_types[to_send_exp_msg]
+
+nn_preds %>% 
+  select(custid, to_send_ep, to_send_ep_msg) %>% 
+  head(10)
+
+```
+
+#### Question 4
+
+```{r}
+nn_preds %>% 
+  group_by(to_send_ep_msg) %>% 
+  summarise(perc = n()/nrow(nn_preds)) %>% 
+  arrange(desc(perc))
+```
+
+#### Question 5
+
+```{r}
+target_ep <- mean(nn_preds$to_send_ep)
+target_ep
+```
+
+#### Question 6
+
+```{r}
+colMeans(nn_preds[,c(11:17)])
+```
+
+#### Question 7
+
+```{r}
+
+random_pred_adj <- adjust_prob(random_pred$Prediction)
+
+exp_random <- random_pred_adj * random_os * 0.4
+random_ep <- mean(exp_random)
+random_ep
+
+```
+
+#### Question 8 
+
+```{r}
+diff_euro <- (target_ep - random_ep) * 5000000
+diff_perc <- diff_euro/(random_ep * 5000000)
+
+print(paste0("The improvement in euros is ", format_nr(diff_euro, dec = 2)))
+print(paste0("The improvement in percentage is ", format_nr(diff_perc, perc = T)))
+```
+
+
 
